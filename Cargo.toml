@@ -1,0 +1,65 @@
+[workspace]
+resolver = "3"
+
+[package]
+name = "BittSeeder"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Unified BT+RTC Seeder — Seeds over BitTorrent and/or WebRTC simultaneously."
+authors = ["Jasper Lingers <info@power2all.com>"]
+
+[[bin]]
+name = "BittSeeder"
+path = "src/main.rs"
+
+[lib]
+name = "seeder"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = 'abort'
+incremental = false
+codegen-units = 1
+rpath = false
+strip = "debuginfo"
+
+[profile.release.package."*"]
+opt-level = 3
+
+[dependencies]
+igd-next = { version = "^0.16", features = ["aio_tokio"] }
+webrtc = "^0.17"
+bytes = "^1"
+sha1 = { version = "^0.10", features = ["std"] }
+sha2 = { version = "^0.10", features = ["std"] }
+bip_bencode = "^0.4"
+hex = "^0.4"
+percent-encoding = "^2.3"
+reqwest = { version = "^0.13", default-features = false, features = ["rustls", "socks"] }
+tokio = { version = "^1", features = ["full"] }
+clap = { version = "^4", features = ["derive"] }
+rand = "^0.10"
+log = "^0.4"
+fern = { version = "^0.7", features = ["colored"] }
+chrono = "^0.4"
+serde = { version = "^1", features = ["derive"] }
+serde_yaml = "^0.9"
+serde_json = "^1"
+actix-web = { version = "^4", features = ["rustls-0_23"] }
+actix-web-httpauth = "^0.8"
+rustls = { version = "^0.23", default-features = false, features = ["ring"] }
+rustls-pemfile = "^2"
+governor = "^0.10"
+argon2 = { version = "^0.5", features = ["password-hash"] }
+rpassword = "^7"
+actix-ws = "^0.4"
+futures-util = { version = "^0.3", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tempfile = "^3"
