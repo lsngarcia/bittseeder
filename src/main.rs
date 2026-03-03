@@ -124,14 +124,7 @@ fn parse_protocol(s: Option<&str>) -> SeedProtocol {
 }
 
 async fn spawn_web_server(
-    web_cfg: WebConfig,
-    web_threads: Option<usize>,
-    yaml_path: PathBuf,
-    shared_file: Arc<RwLock<TorrentsFile>>,
-    stats: crate::stats::shared_stats::SharedStats,
-    reload_tx: tokio::sync::watch::Sender<()>,
-    log_tx: broadcast::Sender<String>,
-    log_buffer: std::sync::Arc<std::sync::Mutex<VecDeque<String>>>,
+    params: web::server::WebServerParams,
 ) -> Option<(std::thread::JoinHandle<()>, actix_web::dev::ServerHandle)> {
     let (handle_tx, handle_rx) = std::sync::mpsc::sync_channel::<actix_web::dev::ServerHandle>(1);
     let thread = std::thread::spawn(move || {
@@ -140,9 +133,7 @@ async fn spawn_web_server(
             .build()
             .expect("failed to build web server runtime");
         rt.block_on(async move {
-            if let Err(e) = web::server::start(
-                web_cfg, web_threads, yaml_path, shared_file, stats, reload_tx, log_tx, log_buffer, handle_tx,
-            ).await {
+            if let Err(e) = web::server::start(params, handle_tx).await {
                 log::error!("[Web] Server error: {}", e);
             }
         });
@@ -392,7 +383,16 @@ async fn main() {
                 cert_path: cli.web_cert.clone(),
                 key_path: cli.web_key.clone(),
             };
-            spawn_web_server(web_cfg, None, yaml_path, shared_file, shared_stats, reload_tx, log_tx.clone(), std::sync::Arc::clone(&log_buffer)).await;
+            spawn_web_server(web::server::WebServerParams {
+                config: web_cfg,
+                web_threads: None,
+                yaml_path,
+                shared_file,
+                stats: shared_stats,
+                reload_tx,
+                log_tx: log_tx.clone(),
+                log_buffer: std::sync::Arc::clone(&log_buffer),
+            }).await;
         }
         let (_stop_tx, stop_rx) = tokio::sync::watch::channel(false);
         let mut s = Seeder::new(config, torrent_info);
@@ -603,16 +603,16 @@ async fn run_torrents_mode(
         cert_path: cli_web_cert.clone().or_else(|| yaml_for_web.config.web_cert.clone()),
         key_path:  cli_web_key.clone().or_else(|| yaml_for_web.config.web_key.clone()),
     };
-    let mut web_server_info = spawn_web_server(
-        initial_web_cfg,
-        current_web_threads,
-        yaml_path.clone(),
-        Arc::clone(&shared_file),
-        Arc::clone(&shared_stats),
-        reload_tx.clone(),
-        log_tx.clone(),
-        std::sync::Arc::clone(&log_buffer),
-    ).await;
+    let mut web_server_info = spawn_web_server(web::server::WebServerParams {
+        config: initial_web_cfg,
+        web_threads: current_web_threads,
+        yaml_path: yaml_path.clone(),
+        shared_file: Arc::clone(&shared_file),
+        stats: Arc::clone(&shared_stats),
+        reload_tx: reload_tx.clone(),
+        log_tx: log_tx.clone(),
+        log_buffer: std::sync::Arc::clone(&log_buffer),
+    }).await;
     loop {
         let (file, entries) = match load_yaml_entries(&yaml_path, cli_proxy.as_ref(), cli_upnp, cli_protocol) {
             Ok(e) => e,
@@ -755,16 +755,16 @@ async fn run_torrents_mode(
                 cert_path: cli_web_cert.clone().or_else(|| cfg_now.web_cert.clone()),
                 key_path:  cli_web_key.clone().or_else(|| cfg_now.web_key.clone()),
             };
-            web_server_info = spawn_web_server(
-                new_web_cfg,
-                new_web_threads,
-                yaml_path.clone(),
-                Arc::clone(&shared_file),
-                Arc::clone(&shared_stats),
-                reload_tx.clone(),
-                log_tx.clone(),
-                std::sync::Arc::clone(&log_buffer),
-            ).await;
+            web_server_info = spawn_web_server(web::server::WebServerParams {
+                config: new_web_cfg,
+                web_threads: new_web_threads,
+                yaml_path: yaml_path.clone(),
+                shared_file: Arc::clone(&shared_file),
+                stats: Arc::clone(&shared_stats),
+                reload_tx: reload_tx.clone(),
+                log_tx: log_tx.clone(),
+                log_buffer: std::sync::Arc::clone(&log_buffer),
+            }).await;
             current_web_threads = new_web_threads;
         }
 

@@ -462,6 +462,23 @@ pub async fn upload_torrent(
     }))
 }
 
+#[derive(Deserialize)]
+pub struct MkdirRequest {
+    pub path: String,
+}
+
+pub async fn mkdir(req: HttpRequest, data: Data<AppState>, body: Json<MkdirRequest>) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    let path = std::path::Path::new(&body.path);
+    if let Err(e) = std::fs::create_dir(path) {
+        return HttpResponse::BadRequest().json(json!({"error": e.to_string()}));
+    }
+    log::info!("[Web] Created directory: {}", path.display());
+    HttpResponse::Ok().json(json!({"ok": true, "path": body.path}))
+}
+
 pub async fn batch_add(req: HttpRequest, data: Data<AppState>) -> HttpResponse {
     if !is_authenticated(&req, &data).await {
         return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));

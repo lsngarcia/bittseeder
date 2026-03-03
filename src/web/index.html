@@ -266,11 +266,22 @@
     <div class="header"><i class="folder open icon"></i> <span id="browser-title">Browse</span></div>
     <div class="content" style="padding-bottom:0">
       <div id="browser-breadcrumb" style="margin-bottom:8px;font-size:0.9em;word-break:break-all"></div>
+      <div id="browser-mkdir-row" style="display:none;margin-bottom:8px;align-items:center;gap:6px">
+        <div class="ui input" style="flex:1">
+          <input id="browser-mkdir-name" type="text" placeholder="New folder name"
+                 onkeydown="if(event.key==='Enter')browserMkdir();else if(event.key==='Escape')browserHideMkdir();">
+        </div>
+        <button class="ui green small button" onclick="browserMkdir()"><i class="check icon"></i>Create</button>
+        <button class="ui small button" onclick="browserHideMkdir()"><i class="times icon"></i></button>
+      </div>
       <div style="border:1px solid #ddd;border-radius:4px;max-height:380px;overflow-y:auto">
         <div id="browser-list" style="margin:0"></div>
       </div>
     </div>
     <div class="actions">
+      <button class="ui teal button" onclick="browserShowMkdir()">
+        <i class="folder plus icon"></i>New Folder
+      </button>
       <button class="ui blue button" id="browser-select-dir-btn" onclick="browserSelectFolder()">
         <i class="check icon"></i>Select This Folder
       </button>
@@ -1197,7 +1208,41 @@ function openBrowser(inputId, mode) {
   }).modal('show');
 }
 
+function browserShowMkdir() {
+  const row = document.getElementById('browser-mkdir-row');
+  row.style.display = 'flex';
+  const inp = document.getElementById('browser-mkdir-name');
+  inp.value = '';
+  inp.focus();
+}
+
+function browserHideMkdir() {
+  document.getElementById('browser-mkdir-row').style.display = 'none';
+}
+
+async function browserMkdir() {
+  const name = document.getElementById('browser-mkdir-name').value.trim();
+  if (!name) return;
+  const newPath = browserPath.replace(/\/$/, '') + '/' + name;
+  try {
+    const r = await apiFetch('/api/mkdir', {
+      method: 'POST',
+      body: JSON.stringify({ path: newPath }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      alert('Failed to create folder: ' + (err.error || 'Unknown error'));
+      return;
+    }
+    browserHideMkdir();
+    browserNavigate(newPath);
+  } catch(e) {
+    if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
+  }
+}
+
 async function browserNavigate(path) {
+  browserHideMkdir();
   browserPath = path;
   document.getElementById('browser-list').innerHTML =
     '<div style="padding:16px;color:#999;text-align:center">Loading…</div>';

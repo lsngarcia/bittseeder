@@ -12,6 +12,7 @@ use crate::web::api::{
     get_status,
     get_torrents,
     get_ws,
+    mkdir,
     post_login,
     post_logout,
     update_config,
@@ -43,17 +44,31 @@ use tokio::sync::{
     RwLock
 };
 
+pub struct WebServerParams {
+    pub config: WebConfig,
+    pub web_threads: Option<usize>,
+    pub yaml_path: PathBuf,
+    pub shared_file: Arc<RwLock<TorrentsFile>>,
+    pub stats: SharedStats,
+    pub reload_tx: watch::Sender<()>,
+    pub log_tx: broadcast::Sender<String>,
+    pub log_buffer: Arc<std::sync::Mutex<VecDeque<String>>>,
+}
+
 pub async fn start(
-    config: WebConfig,
-    web_threads: Option<usize>,
-    yaml_path: PathBuf,
-    shared_file: Arc<RwLock<TorrentsFile>>,
-    stats: SharedStats,
-    reload_tx: watch::Sender<()>,
-    log_tx: broadcast::Sender<String>,
-    log_buffer: Arc<std::sync::Mutex<VecDeque<String>>>,
+    params: WebServerParams,
     server_handle_tx: std::sync::mpsc::SyncSender<actix_web::dev::ServerHandle>,
 ) -> std::io::Result<()> {
+    let WebServerParams {
+        config,
+        web_threads,
+        yaml_path,
+        shared_file,
+        stats,
+        reload_tx,
+        log_tx,
+        log_buffer,
+    } = params;
     let sessions: SessionStore = Arc::new(Mutex::new(HashMap::new()));
     let state = Data::new(AppState {
         yaml_path,
@@ -100,6 +115,7 @@ pub async fn start(
             .route("/api/browse", web::get().to(browse))
             .route("/api/upload-torrent", web::post().to(upload_torrent))
             .route("/api/batch-add", web::post().to(batch_add))
+            .route("/api/mkdir", web::post().to(mkdir))
     });
     if let Some(n) = web_threads {
         server_builder = server_builder.workers(n);
