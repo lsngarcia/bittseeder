@@ -352,6 +352,7 @@ config:
 | `PUT` | `/api/torrents/{idx}` | Replace torrent entry at index |
 | `DELETE` | `/api/torrents/{idx}` | Remove torrent entry at index |
 | `GET` | `/api/browse?path=…` | Server-side file browser |
+| `POST` | `/api/mkdir` | Create a directory on the server: `{"path":"…"}` |
 | `POST` | `/api/upload-torrent?name=<filename>` | Upload a `.torrent` file (raw bytes body, ≤ 32 MiB) |
 | `POST` | `/api/batch-add` | Scan `source_folder` and bulk-add all untracked top-level entries |
 
@@ -451,8 +452,9 @@ BittSeeder binary
 ├── torrent/                       .torrent build + parse (v1/v2/hybrid)
 │
 ├── tracker/
-│   ├── structs/bt_client.rs       BtTrackerClient { Http | Udp }
-│   └── structs/rtc_client.rs      RtcTrackerClient (HTTP-only + SDP offer)
+│   ├── structs/bt_client.rs              BtTrackerClient { Http | Udp }
+│   ├── structs/rtc_client.rs             RtcTrackerClient (HTTP-only + SDP offer)
+│   └── structs/rtc_announce_response.rs  RtcAnnounceResponse
 │
 ├── seeder/
 │   ├── seeder.rs                  BT wire handlers + RTC data channel handlers
@@ -485,4 +487,4 @@ run()
 
 ## License
 
-[AGPL-3.0](LICENSE) — © Jasper Lingers
+[MIT](LICENSE) — © Power2All
