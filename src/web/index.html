@@ -351,7 +351,7 @@
 
   <div class="ui modal" id="upload-modal">
     <div class="header"><i class="upload icon"></i> Upload Files to Server</div>
-    <div class="content" style="padding-bottom:0">
+    <div class="content" style="padding-bottom:16px">
       <div id="u-select-section">
         <div class="ui form" style="margin-bottom:12px">
           <div class="field">
@@ -577,6 +577,40 @@
             Password changes take effect immediately on save. TLS cert/key changes require a process restart.
             Sessions expire after 1 hour of inactivity.
           </div>
+          <h4 class="ui dividing header" style="margin-top:1.5em">
+            <i class="lock icon"></i>Let's Encrypt (Auto-Certificate)
+          </h4>
+          <div class="two fields">
+            <div class="field">
+              <label>Domain</label>
+              <input type="text" id="s-le-domain" placeholder="yourdomain.example.com">
+            </div>
+            <div class="field">
+              <label>Email</label>
+              <input type="text" id="s-le-email" placeholder="admin@example.com">
+            </div>
+          </div>
+          <div class="two fields">
+            <div class="field">
+              <label>HTTP Challenge Port (default 80)</label>
+              <input type="number" id="s-le-port" placeholder="80" min="1" max="65535">
+            </div>
+            <div class="field">
+              <label>Certificate Expires</label>
+              <div class="ui input">
+                <input type="text" id="s-le-expiry" readonly placeholder="(no certificate yet)"
+                       style="background:#f9f9f9;color:#555;cursor:default">
+              </div>
+            </div>
+          </div>
+          <div class="ui info message">
+            <i class="info circle icon"></i>
+            When <strong>Domain</strong> + <strong>Email</strong> are set, BittSeeder obtains and
+            auto-renews a Let's Encrypt certificate via HTTP-01 challenge. The cert/key path fields
+            above are set automatically — no manual configuration required.
+            The HTTP challenge port must be reachable from the internet on port 80
+            (use a reverse proxy or iptables redirect if needed).
+          </div>
         </div>
       </div>
 
@@ -648,6 +682,10 @@
         <tr><td colspan="5" class="center aligned">Loading…</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <div style="text-align:center;margin-top:24px;padding:12px 0;border-top:1px solid rgba(128,128,128,0.2);font-size:0.82em;color:#999">
+    Copyright &copy; 2024&ndash;2026 BittSeeder &amp; Power2All
   </div>
 </div>
 
@@ -1284,6 +1322,10 @@ async function openSettings() {
     document.getElementById('s-web-password').value = cfg.web_password || '';
     document.getElementById('s-web-cert').value = cfg.web_cert || '';
     document.getElementById('s-web-key').value = cfg.web_key || '';
+    document.getElementById('s-le-domain').value = cfg.letsencrypt_domain || '';
+    document.getElementById('s-le-email').value = cfg.letsencrypt_email || '';
+    document.getElementById('s-le-port').value = cfg.letsencrypt_http_port || '';
+    document.getElementById('s-le-expiry').value = cfg.le_cert_expiry || '';
     document.getElementById('s-log-level').value = cfg.log_level || 'info';
     document.getElementById('s-show-stats').checked = cfg.show_stats !== false;
     document.getElementById('s-seeder-threads').value = cfg.seeder_threads || '';
@@ -1344,6 +1386,9 @@ async function saveSettings() {
     seeder_threads: parseInt(document.getElementById('s-seeder-threads').value) || null,
     web_threads: parseInt(document.getElementById('s-web-threads').value) || null,
     source_folder: document.getElementById('s-source-folder').value.trim() || null,
+    letsencrypt_domain: document.getElementById('s-le-domain').value.trim() || null,
+    letsencrypt_email: document.getElementById('s-le-email').value.trim() || null,
+    letsencrypt_http_port: parseInt(document.getElementById('s-le-port').value) || null,
   };
   try {
     const r = await apiFetch('/api/config', {

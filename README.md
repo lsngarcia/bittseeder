@@ -28,6 +28,7 @@ BittSeeder handles both protocols from a single binary. Both share the same torr
   - [Password hashing](#password-hashing-argon2id)
   - [Endpoints](#endpoints)
 - [Batch Add & torrent upload](#batch-add--torrent-upload)
+- [Let's Encrypt auto-certificate](#lets-encrypt-auto-certificate)
 - [Thread count configuration](#thread-count-configuration)
 - [Protocol selection reference](#protocol-selection-reference)
 - [Supported BEPs](#supported-beps)
@@ -199,8 +200,13 @@ config:
   upnp: false
   web_port: 8092
   web_password: secret
+  # Manual TLS (mutually exclusive with Let's Encrypt below)
   # web_cert: /path/to/cert.pem
   # web_key:  /path/to/key.pem
+  # Automatic Let's Encrypt TLS (set domain + email to activate)
+  # letsencrypt_domain: myserver.example.com
+  # letsencrypt_email:  admin@example.com
+  # letsencrypt_http_port: 80     # port BittSeeder binds for HTTP-01 challenge
   log_level: info
   show_stats: true
   proxy:
@@ -260,6 +266,9 @@ torrents:
 | `web_threads` | `usize` | *(auto)* | Number of actix-web worker threads (omit to let the OS decide) |
 | `seeder_threads` | `usize` | *(auto)* | Number of tokio worker threads used by the seeder runtime (omit to use all CPU cores) |
 | `source_folder` | `path` | — | Directory scanned by the **Batch Add** feature |
+| `letsencrypt_domain` | `string` | — | Domain name for automatic Let's Encrypt TLS certificate |
+| `letsencrypt_email` | `string` | — | Contact email registered with the Let's Encrypt account |
+| `letsencrypt_http_port` | `u16` | `80` | Port BittSeeder binds to serve the HTTP-01 ACME challenge |
 
 ### Torrent entry keys
 
@@ -411,6 +420,56 @@ A **Include folder name** toggle (default on) controls whether the top-level fol
 
 ---
 
+## Let's Encrypt auto-certificate
+
+BittSeeder can obtain and renew a [Let's Encrypt](https://letsencrypt.org) TLS certificate automatically using the **ACME HTTP-01** challenge — no manual certificate management required.
+
+### How to enable
+
+Set `letsencrypt_domain` and `letsencrypt_email` in your YAML config (or through **Settings → Security → Let's Encrypt** in the web UI):
+
+```yaml
+config:
+  web_port: 8443
+  letsencrypt_domain: myserver.example.com
+  letsencrypt_email:  admin@example.com
+  letsencrypt_http_port: 80   # omit to default to 80
+```
+
+That is all. Leave `web_cert` and `web_key` unset — BittSeeder fills them in automatically once the certificate is issued.
+
+### What happens
+
+1. **At startup** BittSeeder checks whether `bittseeder.crt` (written next to `config.yaml`) is missing or older than 60 days.
+2. If a certificate is needed, BittSeeder creates (or loads) an ACME account stored in `bittseeder-account.key` alongside the config.
+3. It starts a temporary HTTP server on `letsencrypt_http_port` (default `80`) to serve the ACME HTTP-01 challenge at `/.well-known/acme-challenge/<token>`.
+4. After Let's Encrypt validates the domain, BittSeeder finalises the order, downloads the certificate chain, and writes:
+   - `bittseeder.crt` — PEM certificate chain
+   - `bittseeder.key` — PEM private key
+5. The global config is updated (`web_cert` / `web_key` → these paths) and written back to disk.
+6. The web server hot-restarts to serve HTTPS with the new certificate — no manual restart needed.
+7. Every **12 hours** BittSeeder repeats the check. If the certificate is still fresh the check is a no-op; if not, it renews automatically.
+
+### Requirements
+
+- The domain must resolve to the machine running BittSeeder.
+- Port `80` (or the configured `letsencrypt_http_port`) must be reachable from the internet. If you run BittSeeder behind a reverse proxy, configure the proxy to forward port 80 to the challenge port, or use iptables to redirect it.
+- `web_cert` and `web_key` should be left unset when using Let's Encrypt — they are managed automatically.
+
+### Files written next to `config.yaml`
+
+| File | Contents |
+|---|---|
+| `bittseeder.crt` | PEM-encoded certificate chain (renewed every 60–90 days) |
+| `bittseeder.key` | PEM-encoded private key |
+| `bittseeder-account.key` | ACME account credentials (JSON) — keep this safe |
+
+### Certificate expiry in the web UI
+
+The **Settings → Security → Let's Encrypt** panel shows a read-only **Certificate Expires** date derived from the certificate file's modification time plus 90 days (the standard Let's Encrypt validity period).
+
+---
+
 ## Thread count configuration
 
 BittSeeder runs two independent runtimes whose thread counts can be tuned separately — either in the YAML config or through the web UI **Settings → Performance** tab.
@@ -502,6 +561,7 @@ BittSeeder binary
 │   └── impls/seeder.rs            run() — concurrent BT+RTC with watch-channel shutdown
 │
 └── web/
+    ├── acme.rs                    ACME HTTP-01 flow — Let's Encrypt auto-certificate
     ├── api.rs                     REST API + WebSocket + bearer token auth
     ├── server.rs                  Actix-web server + optional TLS
     └── index.html                 UI: charts, live log console, torrent management

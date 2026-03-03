@@ -393,7 +393,27 @@ pub async fn get_config(req: HttpRequest, data: Data<AppState>) -> HttpResponse 
         return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
     }
     let file = data.shared_file.read().await;
-    HttpResponse::Ok().json(&file.config)
+    let mut config_json = match serde_json::to_value(&file.config) {
+        Ok(v) => v,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    drop(file);
+    let cert_path = data.yaml_path.parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join("bittseeder.crt");
+    if cert_path.exists()
+        && let Ok(meta) = std::fs::metadata(&cert_path)
+        && let Ok(modified) = meta.modified()
+    {
+        use chrono::{DateTime, Utc};
+        let expiry_time = modified + std::time::Duration::from_secs(90 * 24 * 3600);
+        let dt: DateTime<Utc> = DateTime::from(expiry_time);
+        let expiry_str = dt.format("%Y-%m-%d").to_string();
+        if let serde_json::Value::Object(ref mut map) = config_json {
+            map.insert("le_cert_expiry".to_string(), serde_json::Value::String(expiry_str));
+        }
+    }
+    HttpResponse::Ok().json(config_json)
 }
 
 pub async fn update_config(req: HttpRequest, data: Data<AppState>, body: Json<GlobalConfig>) -> HttpResponse {
