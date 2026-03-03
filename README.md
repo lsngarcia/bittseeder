@@ -30,6 +30,7 @@ BittSeeder handles both protocols from a single binary. Both share the same torr
 - [Batch Add & torrent upload](#batch-add--torrent-upload)
 - [Thread count configuration](#thread-count-configuration)
 - [Protocol selection reference](#protocol-selection-reference)
+- [Supported BEPs](#supported-beps)
 - [Client identification](#client-identification)
 - [Architecture overview](#architecture-overview)
 - [License](#license)
@@ -416,6 +417,22 @@ When a field is left blank (or the YAML key is absent) the runtime uses its defa
 | Serve both clients simultaneously | `both` | Yes | Yes |
 
 A torrent entry with `protocol: bt` in a `both`-mode YAML session still benefits from the shared BT listener — it just won't make RTC offers. Similarly, a `protocol: rtc` entry skips the BT registry entirely.
+
+---
+
+## Supported BEPs
+
+BittSeeder implements the following [BitTorrent Enhancement Proposals](https://www.bittorrent.org/beps/bep_0000.html):
+
+| BEP | Title | Notes |
+|---|---|---|
+| [BEP 3](https://www.bittorrent.org/beps/bep_0003.html) | The BitTorrent Protocol | Core wire protocol (handshake, BITFIELD, REQUEST, PIECE, CHOKE/UNCHOKE); HTTP tracker announce/stopped; v1 torrent metainfo format |
+| [BEP 9](https://www.bittorrent.org/beps/bep_0009.html) | Extension for Peers to Send Metadata Files | Magnet URI parsing — extracts info hash and tracker URLs from `magnet:?xt=urn:btih:…&tr=…`; peer metadata exchange (ut_metadata) is not implemented |
+| [BEP 12](https://www.bittorrent.org/beps/bep_0012.html) | Multitracker Metadata Extension | `announce-list` written to all generated `.torrent` files; all tracker tiers are announced in parallel |
+| [BEP 15](https://www.bittorrent.org/beps/bep_0015.html) | UDP Tracker Protocol | Full connect/announce/stopped lifecycle over UDP (`udp://` tracker URLs) |
+| [BEP 19](https://www.bittorrent.org/beps/bep_0019.html) | WebSeed (GetRight style) | `url-list` field written to generated `.torrent` files when `--webseed` / `webseed` entries are configured |
+| [BEP 23](https://www.bittorrent.org/beps/bep_0023.html) | Tracker Returns Compact Peer Lists | Always requests `compact=1`; parses 6-byte compact IPv4 peer entries (4-byte IP + 2-byte port) |
+| [BEP 52](https://www.bittorrent.org/beps/bep_0052.html) | The BitTorrent Protocol v2 | Full v2 torrent creation (SHA-256 piece hashing, per-file Merkle trees, `file tree` info structure); hybrid v1+v2 torrents; v2 magnet links (`xt=urn:btmh:1220…`) |
 
 ---
 
