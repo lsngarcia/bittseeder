@@ -102,10 +102,7 @@
       .ui.form .four.fields > .field { width: calc(50% - 1em) !important; box-sizing: border-box; }
     }
 
-    @media (max-width: 767px) {
-      body { padding: 8px; }
-
-      .header-row { flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    @media (max-width: 1090px) {
       #hamburger-btn { display: inline-flex !important; }
       #header-actions {
         display: none !important;
@@ -142,6 +139,12 @@
       html.dark-mode #header-actions { background: #27292a !important; border-color: #444 !important; }
       html.dark-mode #header-actions .ui.button { color: #e0e0e0 !important; border-bottom-color: #3d3d3d !important; }
       html.dark-mode #header-actions .ui.button:hover { background: #353637 !important; }
+    }
+
+    @media (max-width: 767px) {
+      body { padding: 8px; }
+
+      .header-row { flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 
       #chart-grid { grid-template-columns: 1fr !important; }
 
@@ -423,6 +426,17 @@
         <i class="check icon"></i>Select This Folder
       </button>
       <button class="ui button" onclick="$('#file-browser-modal').modal('hide')">Cancel</button>
+    </div>
+  </div>
+
+  <div class="ui modal" id="error-modal">
+    <div class="header"><i class="exclamation triangle icon"></i> Error</div>
+    <div class="content" style="display:flex;align-items:center;gap:16px;padding:24px 16px">
+      <i class="exclamation circle icon" style="font-size:3em;color:#db2828;flex-shrink:0;line-height:1;vertical-align:middle"></i>
+      <p id="error-modal-msg" style="font-size:1.1em;word-break:break-word;margin:0;text-align:left"></p>
+    </div>
+    <div class="actions">
+      <button class="ui red button" onclick="$('#error-modal').modal('hide')"><i class="times icon"></i> Close</button>
     </div>
   </div>
 
@@ -1767,6 +1781,11 @@ async function uploadTorrentFile() {
   fileInput.value = '';
 }
 
+function showError(msg) {
+  document.getElementById('error-modal-msg').textContent = msg;
+  $('#error-modal').modal('show');
+}
+
 async function batchAdd() {
   try {
     const r = await apiFetch('/api/batch-add', { method: 'POST' });
@@ -1776,7 +1795,7 @@ async function batchAdd() {
         const msg = result.skipped > 0
           ? `No new items found — ${result.skipped} already tracked.`
           : 'Source folder is empty or has no new items.';
-        alert(msg);
+        showError(msg);
       } else {
         document.getElementById('status-text').textContent =
           `Batch add: ${result.added} new torrent(s) added, ${result.skipped} already tracked — reloading…`;
@@ -1785,10 +1804,10 @@ async function batchAdd() {
     } else {
       let msg;
       try { msg = (await r.json()).error; } catch { msg = await r.text(); }
-      alert('Batch add failed: ' + msg);
+      showError('Batch add failed: ' + msg);
     }
   } catch(e) {
-    if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
+    if (e.message !== 'Unauthorized') showError('Error: ' + e.message);
   }
 }
 </script>
