@@ -108,13 +108,14 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then
             curl -L "${{ matrix.upx_url }}" -o upx.zip
             unzip upx.zip -d upx
-            echo "$PWD/upx" >> $GITHUB_PATH
+            echo "/tmp/upx" >> $GITHUB_PATH
           else
             curl -L "${{ matrix.upx_url }}" -o upx.tar.xz
             tar xf upx.tar.xz
-            cd upx*
+            UPX_DIR=$(ls -d upx* | head -1)
+            cd "$UPX_DIR"
             chmod +x upx
-            echo "$PWD" >> $GITHUB_PATH
+            pwd >> $GITHUB_PATH
           fi
 
       - name: Compress binary with UPX
