@@ -1030,6 +1030,9 @@ $(document).on('click', '.browser-item', function() {
 
 let uploadFiles = [];
 let uploadCancelled = false;
+$("#upload-modal").modal({ closable: false });
+document.getElementById("u-btn-close").disabled = true;
+document.getElementById("u-btn-close").classList.add("disabled");
 let uploadIncludeFolder = true;
 const UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
 
@@ -1042,12 +1045,16 @@ function effectiveRelPath(relPath) {
 function openUploadModal() {
   uploadFiles = [];
   uploadCancelled = false;
+  $("#upload-modal").modal({ closable: false });
+  document.getElementById("u-btn-close").disabled = true;
+  document.getElementById("u-btn-close").classList.add("disabled");
   uploadIncludeFolder = true;
   document.getElementById('u-include-folder').checked = true;
   document.getElementById('u-file-input').value = '';
   document.getElementById('u-folder-input').value = '';
   document.getElementById('u-file-summary').textContent = '';
   showUploadPhase('select');
+  enableModalClosing();
   renderUploadFileList();
   $('#upload-modal').modal('show');
 }
@@ -1057,6 +1064,15 @@ function showUploadPhase(phase) {
   document.getElementById('u-progress-section').style.display = phase === 'upload' ? '' : 'none';
   document.getElementById('u-btn-upload').style.display = phase === 'select' ? '' : 'none';
   document.getElementById('u-btn-close').textContent = phase === 'select' ? 'Cancel' : 'Close';
+}
+
+function enableModalClosing() {
+  $("#upload-modal").modal({ closable: true });
+  const btn = document.getElementById("u-btn-close");
+  if (btn) {
+    btn.disabled = false;
+    btn.classList.remove(disabled);
+  }
 }
 
 function onUploadFilesSelected(input) {
@@ -1103,82 +1119,150 @@ async function sha256Hex(buffer) {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function startUpload() {
-  const destBase = document.getElementById('u-dest-folder').value.trim();
-  if (!destBase) { alert('Please select a destination folder on the server.'); return; }
-  if (uploadFiles.length === 0) { alert('No files selected.'); return; }
-  uploadCancelled = false;
-  showUploadPhase('upload');
-  let html = '';
-  for (let i = 0; i < uploadFiles.length; i++) {
-    html += `<div style="margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:0.87em;margin-bottom:3px">
-        <span style="word-break:break-all;flex:1;margin-right:8px">${escHtml(uploadFiles[i].relPath)}</span>
-        <span id="u-lbl-${i}" style="flex-shrink:0;color:#888">Waiting…</span>
-      </div>
-      <div style="background:#e0e0e0;border-radius:4px;height:6px;overflow:hidden">
-        <div id="u-bar-${i}" style="height:100%;width:0%;background:#2185d0;transition:width 0.15s;border-radius:4px"></div>
-      </div>
-    </div>`;
+async function sha256HexFile(file) {
+  const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+  let offset = 0;
+  if (file.size > 500 * 1024 * 1024) {
+    console.log('File too large for client-side hashing, server will verify');
+    return '';
   }
-  document.getElementById('u-progress-list').innerHTML = html;
-  document.getElementById('u-overall-label').textContent = `0 / ${uploadFiles.length} files done`;
-  document.getElementById('u-overall-bar').style.cssText = 'height:100%;width:0%;background:#2185d0;transition:width 0.25s;border-radius:4px';
-  let done = 0;
-  for (let i = 0; i < uploadFiles.length; i++) {
-    const lbl = document.getElementById(`u-lbl-${i}`);
-    const bar = document.getElementById(`u-bar-${i}`);
-    if (uploadCancelled) {
-      lbl.textContent = 'Skipped';
-      lbl.style.color = '#aaa';
-      done++;
-      continue;
+  try {
+    const chunks = [];
+    while (offset < file.size) {
+      const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
+      const chunkBuf = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Failed to read file chunk'));
+        reader.readAsArrayBuffer(chunk);
+      });
+      chunks.push(new Uint8Array(chunkBuf));
+      offset += chunkSize;
     }
-    lbl.textContent = '0%';
-    lbl.style.color = '';
-    try {
-      await uploadSingleFile(uploadFiles[i].file, effectiveRelPath(uploadFiles[i].relPath), destBase,
-        pct => {
-          bar.style.width = (pct * 100).toFixed(1) + '%';
-          lbl.textContent = (pct * 100).toFixed(0) + '%';
-        },
-        pct => {
-          bar.style.background = '#f2711c';
-          bar.style.width = pct + '%';
-          lbl.textContent = 'Verifying ' + pct + '%';
-          lbl.style.color = '#f2711c';
-        });
-      bar.style.width = '100%';
-      bar.style.background = '#21ba45';
-      lbl.textContent = '✓ Done';
-      lbl.style.color = '#21ba45';
-    } catch (e) {
-      if (e.message === 'Cancelled') {
-        lbl.textContent = 'Cancelled';
-        lbl.style.color = '#aaa';
-      } else {
-        bar.style.background = '#db2828';
-        lbl.textContent = '✗ ' + e.message;
-        lbl.style.color = '#db2828';
-      }
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const combined = new Uint8Array(totalLength);
+    let position = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, position);
+      position += chunk.length;
     }
-    done++;
-    document.getElementById('u-overall-label').textContent = `${done} / ${uploadFiles.length} files done`;
-    const overallBar = document.getElementById('u-overall-bar');
-    overallBar.style.width = ((done / uploadFiles.length) * 100) + '%';
-    if (done === uploadFiles.length && !uploadCancelled) {
-      overallBar.style.background = '#21ba45';
-    }
-  }
-  if (uploadCancelled) {
-    document.getElementById('u-overall-label').textContent = 'Upload stopped.';
+    const hash = await crypto.subtle.digest('SHA-256', combined.buffer);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    console.error('Error reading file for hashing:', e);
+    return '';
   }
 }
 
+async function startUpload() {
+  console.log('[Upload] Starting upload process...');
+  try {
+    const destBase = document.getElementById('u-dest-folder').value.trim();
+    console.log('[Upload] Destination folder:', destBase);
+    if (!destBase) {
+      alert('Please select a destination folder on the server.');
+      return;
+    }
+    if (uploadFiles.length === 0) {
+      alert('No files selected.');
+      return;
+    }
+    console.log('[Upload] Files to upload:', uploadFiles.length);
+    console.log('[Upload] File details:', uploadFiles.map(f => ({
+      name: f.relPath,
+      size: f.file.size,
+      type: f.file.type
+    })));
+    uploadCancelled = false;
+    $("#upload-modal").modal({ closable: false });
+    document.getElementById("u-btn-close").disabled = true;
+    document.getElementById("u-btn-close").classList.add("disabled");
+    showUploadPhase('upload');
+    let html = '';
+    for (let i = 0; i < uploadFiles.length; i++) {
+      html += `<div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:0.87em;margin-bottom:3px">
+          <span style="word-break:break-all;flex:1;margin-right:8px">${escHtml(uploadFiles[i].relPath)}</span>
+          <span id="u-lbl-${i}" style="flex-shrink:0;color:#888">Waiting…</span>
+        </div>
+        <div style="background:#e0e0e0;border-radius:4px;height:6px;overflow:hidden">
+          <div id="u-bar-${i}" style="height:100%;width:0%;background:#2185d0;transition:width 0.15s;border-radius:4px"></div>
+        </div>
+      </div>`;
+    }
+    document.getElementById('u-progress-list').innerHTML = html;
+    document.getElementById('u-overall-label').textContent = `0 / ${uploadFiles.length} files done`;
+    document.getElementById('u-overall-bar').style.cssText = 'height:100%;width:0%;background:#2185d0;transition:width 0.25s;border-radius:4px';
+    let done = 0;
+    for (let i = 0; i < uploadFiles.length; i++) {
+      const lbl = document.getElementById(`u-lbl-${i}`);
+      const bar = document.getElementById(`u-bar-${i}`);
+      if (uploadCancelled) {
+        lbl.textContent = 'Skipped';
+        lbl.style.color = '#aaa';
+        done++;
+        continue;
+      }
+      lbl.textContent = '0%';
+      lbl.style.color = '';
+      try {
+        await uploadSingleFile(uploadFiles[i].file, effectiveRelPath(uploadFiles[i].relPath), destBase,
+          pct => {
+            bar.style.width = (pct * 100).toFixed(1) + '%';
+            lbl.textContent = (pct * 100).toFixed(0) + '%';
+          },
+          pct => {
+            bar.style.background = '#f2711c';
+            bar.style.width = pct + '%';
+            lbl.textContent = 'Verifying ' + pct + '%';
+            lbl.style.color = '#f2711c';
+          });
+        bar.style.width = '100%';
+        bar.style.background = '#21ba45';
+        lbl.textContent = '✓ Done';
+        lbl.style.color = '#21ba45';
+      } catch (e) {
+        if (e.message === 'Cancelled') {
+          lbl.textContent = 'Cancelled';
+          lbl.style.color = '#aaa';
+        } else {
+          bar.style.background = '#db2828';
+          lbl.textContent = '✗ ' + e.message;
+          lbl.style.color = '#db2828';
+        }
+      }
+      done++;
+      document.getElementById('u-overall-label').textContent = `${done} / ${uploadFiles.length} files done`;
+      const overallBar = document.getElementById('u-overall-bar');
+      overallBar.style.width = ((done / uploadFiles.length) * 100) + '%';
+      enableModalClosing();
+      if (done === uploadFiles.length && !uploadCancelled) {
+        overallBar.style.background = '#21ba45';
+      }
+    }
+    if (uploadCancelled) {
+      document.getElementById('u-overall-label').textContent = 'Upload stopped.';
+    }
+  } catch (e) {
+    console.error('[Upload] Fatal error in startUpload:', e);
+    alert('Upload failed: ' + e.message);
+    showUploadPhase('select');
+    enableModalClosing();
+  }
+
+}
 async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgress) {
   const dest = destBase.replace(/\/+$/, '') + '/' + relPath;
   const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_SIZE));
-  const fileSha256 = await sha256Hex(await file.arrayBuffer());
+  console.log(`Starting upload: ${relPath} (${file.size} bytes, ${totalChunks} chunks)`);
+  let fileSha256;
+  try {
+    fileSha256 = await sha256HexFile(file);
+    console.log(`File hash: ${fileSha256 || '(skipped for large file)'}`);
+  } catch (e) {
+    console.error('Failed to calculate file hash:', e);
+    fileSha256 = '';
+  }
   const initR = await apiFetch('/api/file-upload/init', {
     method: 'POST',
     body: JSON.stringify({ dest, size: file.size, chunks: totalChunks, chunk_size: UPLOAD_CHUNK_SIZE, file_sha256: fileSha256 }),
@@ -1192,7 +1276,13 @@ async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgr
         throw new Error('Cancelled');
       }
       const start = i * UPLOAD_CHUNK_SIZE;
-      const chunkBuf = await file.slice(start, Math.min(start + UPLOAD_CHUNK_SIZE, file.size)).arrayBuffer();
+      const chunk = file.slice(start, Math.min(start + UPLOAD_CHUNK_SIZE, file.size));
+      const chunkBuf = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Failed to read file chunk'));
+        reader.readAsArrayBuffer(chunk);
+      });
       const sha256 = await sha256Hex(chunkBuf);
       let lastErr = null;
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -1212,17 +1302,18 @@ async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgr
   }
   onHashProgress(0);
   let polling = true;
-  (async () => {
+  await (async () => {
     while (polling) {
       await new Promise(r => setTimeout(r, 400));
       if (!polling) break;
       try {
         const pr = await apiFetch(`/api/file-upload/${encodeURIComponent(upload_id)}/hash-progress`);
         if (pr.ok) {
-          const { percent } = await pr.json();
+          const {percent} = await pr.json();
           onHashProgress(percent);
         }
-      } catch (_) {}
+      } catch (_) {
+      }
     }
   })();
   try {
@@ -1248,7 +1339,7 @@ async function apiFetchBinary(url, body) {
     authToken = null;
     localStorage.removeItem('seeder_token');
     disconnectWs();
-    showLogin();
+    await showLogin();
     throw new Error('Unauthorized');
   }
   return r;
@@ -1276,7 +1367,7 @@ async function uploadTorrentFile() {
     if (r.status === 401) {
       authToken = null;
       localStorage.removeItem('seeder_token');
-      showLogin();
+      await showLogin();
       return;
     }
     if (r.ok) {

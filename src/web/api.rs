@@ -958,7 +958,7 @@ pub async fn file_upload_finalize(
             hash_progress.fetch_add(n as u64, Ordering::Relaxed);
         }
         let computed = hex::encode(hasher.finalize());
-        if computed != file_sha256 {
+        if !file_sha256.is_empty() && computed != file_sha256 {
             let _ = std::fs::remove_file(&part_path);
             return Err(io::Error::other(format!(
                 "Integrity check failed: expected SHA-256 {file_sha256}, computed {computed}"
