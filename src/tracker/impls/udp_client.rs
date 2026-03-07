@@ -23,18 +23,34 @@ impl BtUdpClient {
         if remote_addrs.is_empty() {
             return Err(format!("UDP tracker DNS resolution failed: {}", addr).into());
         }
+        let mut ipv4_addr = None;
+        let mut ipv6_addr = None;
+        for &a in &remote_addrs {
+            if a.is_ipv4() && ipv4_addr.is_none() { ipv4_addr = Some(a); }
+            else if a.is_ipv6() && ipv6_addr.is_none() { ipv6_addr = Some(a); }
+            if ipv4_addr.is_some() && ipv6_addr.is_some() { break; }
+        }
+        let candidates: Vec<_> = [ipv4_addr, ipv6_addr].into_iter().flatten().collect();
+        let mut merged = AnnounceResponse::default();
+        let mut any_ok = false;
         let mut last_err: Box<dyn std::error::Error + Send + Sync> =
             "no reachable UDP tracker address".into();
-        for remote_addr in remote_addrs {
+        for remote_addr in candidates {
             match self.announce_via(remote_addr, uploaded, event).await {
-                Ok(resp) => return Ok(resp),
+                Ok(resp) => {
+                    if !any_ok || resp.interval < merged.interval {
+                        merged.interval = resp.interval;
+                    }
+                    merged.peers.extend(resp.peers);
+                    any_ok = true;
+                }
                 Err(e) => {
-                    log::debug!("[Tracker/UDP] {} via {} — trying next address", e, remote_addr);
+                    log::debug!("[Tracker/UDP] {} via {} — skipping", e, remote_addr);
                     last_err = e;
                 }
             }
         }
-        Err(last_err)
+        if any_ok { Ok(merged) } else { Err(last_err) }
     }
 
     async fn announce_via(
