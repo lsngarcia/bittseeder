@@ -59,7 +59,12 @@ impl Seeder {
         if let Some(v2h) = self.torrent_info.v2_info_hash {
             println!("v2Hash: {}", hex::encode(v2h));
         }
-        println!("\nMagnet URI:\n{}\n", self.torrent_info.magnet_uri);
+        if let Some(ref v2_magnet) = self.torrent_info.v2_magnet_uri {
+            println!("\nMagnet URI (v1):\n{}\n", self.torrent_info.magnet_uri);
+            println!("Magnet URI (v2):\n{}\n", v2_magnet);
+        } else {
+            println!("\nMagnet URI:\n{}\n", self.torrent_info.magnet_uri);
+        }
         println!("Share the magnet URI or the .torrent file with leechers.\n");
         println!("Data  :");
         for file in &self.torrent_info.files {
@@ -159,9 +164,10 @@ impl Seeder {
                             for tracker in &trackers_ann {
                                 match tracker.announce(up, "").await {
                                     Ok(resp) => {
-                                        log::info!("[Tracker/BT] Re-announced (interval={}s)", resp.interval);
+                                        println!("[Tracker/BT] Re-announced — interval={}s, peers={}", resp.interval, resp.peers.len());
                                     }
                                     Err(e) => {
+                                        println!("[Tracker/BT] Re-announce failed: {}", e);
                                         log::warn!("[Tracker/BT] Re-announce failed: {}", e);
                                     }
                                 }
@@ -404,10 +410,11 @@ impl Seeder {
                             if interval < *interval_out {
                                 *interval_out = interval;
                             }
-                            log::info!("[Tracker/BT] Announced ({}) to {}: interval={}s", label, url, interval);
+                            println!("[Tracker/BT] Announced ({}) to {} — interval={}s, peers={}", label, url, interval, resp.peers.len());
                             trackers.push(tracker);
                         }
                         Err(e) => {
+                            println!("[Tracker/BT] Announce ({}) to {} failed: {}", label, url, e);
                             log::warn!("[Tracker/BT] {} ({}) failed: {} — skipping", url, label, e);
                         }
                     }

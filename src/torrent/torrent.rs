@@ -802,6 +802,7 @@ pub fn build_v1(
         info_hash,
         torrent_bytes,
         magnet_uri,
+        v2_magnet_uri: None,
         version: TorrentVersion::V1,
         v2_info_hash: None,
         tracker_urls: tracker_urls.to_vec(),
@@ -851,6 +852,7 @@ pub fn build_v2(
         info_hash,
         torrent_bytes,
         magnet_uri,
+        v2_magnet_uri: None,
         version: TorrentVersion::V2,
         v2_info_hash: Some(v2_hash),
         tracker_urls: tracker_urls.to_vec(),
@@ -896,7 +898,8 @@ pub fn build_hybrid(
         build_v2_torrent_bencode(&info_bytes, tracker_urls, creation_date, webseed_urls, &piece_layers_bytes);
     let v1_hex = hex::encode(info_hash);
     let v2_hex = hex::encode(v2_hash);
-    let magnet_uri = build_hybrid_magnet_uri(&v1_hex, &v2_hex, &name, tracker_urls);
+    let magnet_uri = build_magnet_uri(&v1_hex, &name, tracker_urls);
+    let v2_magnet_uri = Some(build_v2_magnet_uri(&v2_hex, &name, tracker_urls));
     Ok(TorrentInfo {
         name,
         piece_length,
@@ -907,6 +910,7 @@ pub fn build_hybrid(
         info_hash,
         torrent_bytes,
         magnet_uri,
+        v2_magnet_uri,
         version: TorrentVersion::Hybrid,
         v2_info_hash: Some(v2_hash),
         tracker_urls: tracker_urls.to_vec(),

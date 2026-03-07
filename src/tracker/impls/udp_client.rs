@@ -107,7 +107,7 @@ impl BtUdpClient {
         .await??;
         let resp = parse_udp_announce_response(&ann_resp[..n], txid2)
             .ok_or("UDP tracker: invalid announce response")?;
-        log::debug!("[Tracker/UDP] Announce OK via {}: interval={}s", remote_addr, resp.interval);
+        println!("[Tracker/UDP] OK via {} — interval={}s, peers={}", remote_addr, resp.interval, resp.peers.len());
         Ok(resp)
     }
 }

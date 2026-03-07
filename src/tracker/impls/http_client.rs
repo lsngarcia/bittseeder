@@ -36,6 +36,10 @@ impl BtHttpClient {
         log::debug!("[Tracker/HTTP] GET {}", url);
         let resp = self.http.get(&url).send().await?;
         let body = resp.bytes().await?;
-        Ok(parse_bt_announce_response(&body))
+        let parsed = parse_bt_announce_response(&body);
+        if parsed.failure_reason.is_none() {
+            println!("[Tracker/HTTP] OK {} — interval={}s, peers={}", self.tracker_url, parsed.interval, parsed.peers.len());
+        }
+        Ok(parsed)
     }
 }
