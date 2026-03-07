@@ -1064,19 +1064,19 @@ function openUploadModal() {
 }
 
 function showUploadPhase(phase) {
+  document.getElementById('u-select-section').style.display = phase === 'select' ? '' : 'none';
+  document.getElementById('u-progress-section').style.display = phase === 'upload' ? '' : 'none';
+  document.getElementById('u-btn-upload').style.display = phase === 'select' ? '' : 'none';
+  document.getElementById('u-btn-close').textContent = phase === 'select' ? 'Cancel' : 'Close';
+}
 
 function enableModalClosing() {
   $("#upload-modal").modal({ closable: true });
   const btn = document.getElementById("u-btn-close");
   if (btn) {
     btn.disabled = false;
-    btn.classList.remove(disabled);
+    btn.classList.remove("disabled");
   }
-}
-  document.getElementById('u-select-section').style.display = phase === 'select' ? '' : 'none';
-  document.getElementById('u-progress-section').style.display = phase === 'upload' ? '' : 'none';
-  document.getElementById('u-btn-upload').style.display = phase === 'select' ? '' : 'none';
-  document.getElementById('u-btn-close').textContent = phase === 'select' ? 'Cancel' : 'Close';
 }
 
 function onUploadFilesSelected(input) {
@@ -1118,9 +1118,8 @@ function renderUploadFileList() {
   summary.textContent = `${uploadFiles.length} file${uploadFiles.length !== 1 ? 's' : ''} — ${fmtBytes(totalBytes)} total`;
 }
 
-// Pure-JS SHA-256 — works without crypto.subtle (no HTTPS required)
+// Pure-JS SHA-256 — no crypto.subtle / HTTPS required
 function sha256Pure(data) {
-  // data: Uint8Array → returns hex string
   const K = [
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
     0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
