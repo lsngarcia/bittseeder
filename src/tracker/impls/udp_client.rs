@@ -19,10 +19,30 @@ impl BtUdpClient {
     ) -> Result<AnnounceResponse, Box<dyn std::error::Error + Send + Sync>> {
         let addr = parse_udp_tracker_addr(&self.tracker_url)
             .ok_or_else(|| format!("invalid UDP tracker URL: {}", self.tracker_url))?;
-        let remote_addr = tokio::net::lookup_host(&addr)
-            .await?
-            .next()
-            .ok_or("UDP tracker DNS resolution failed")?;
+        let remote_addrs: Vec<_> = tokio::net::lookup_host(&addr).await?.collect();
+        if remote_addrs.is_empty() {
+            return Err(format!("UDP tracker DNS resolution failed: {}", addr).into());
+        }
+        let mut last_err: Box<dyn std::error::Error + Send + Sync> =
+            "no reachable UDP tracker address".into();
+        for remote_addr in remote_addrs {
+            match self.announce_via(remote_addr, uploaded, event).await {
+                Ok(resp) => return Ok(resp),
+                Err(e) => {
+                    log::debug!("[Tracker/UDP] {} via {} — trying next address", e, remote_addr);
+                    last_err = e;
+                }
+            }
+        }
+        Err(last_err)
+    }
+
+    async fn announce_via(
+        &self,
+        remote_addr: std::net::SocketAddr,
+        uploaded: u64,
+        event: &str,
+    ) -> Result<AnnounceResponse, Box<dyn std::error::Error + Send + Sync>> {
         let bind_addr = if remote_addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" };
         let socket = tokio::net::UdpSocket::bind(bind_addr).await?;
         socket.connect(remote_addr).await?;
@@ -71,7 +91,7 @@ impl BtUdpClient {
         .await??;
         let resp = parse_udp_announce_response(&ann_resp[..n], txid2)
             .ok_or("UDP tracker: invalid announce response")?;
-        log::debug!("[Tracker/UDP] Announce OK: interval={}s", resp.interval);
+        log::debug!("[Tracker/UDP] Announce OK via {}: interval={}s", remote_addr, resp.interval);
         Ok(resp)
     }
 }
