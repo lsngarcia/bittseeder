@@ -1064,19 +1064,19 @@ function openUploadModal() {
 }
 
 function showUploadPhase(phase) {
+
+  function enableModalClosing() {
+    $("#upload-modal").modal({ closable: true });
+    const btn = document.getElementById("u-btn-close");
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove(disabled);
+    }
+  }
   document.getElementById('u-select-section').style.display = phase === 'select' ? '' : 'none';
   document.getElementById('u-progress-section').style.display = phase === 'upload' ? '' : 'none';
   document.getElementById('u-btn-upload').style.display = phase === 'select' ? '' : 'none';
   document.getElementById('u-btn-close').textContent = phase === 'select' ? 'Cancel' : 'Close';
-}
-
-function enableModalClosing() {
-  $("#upload-modal").modal({ closable: true });
-  const btn = document.getElementById("u-btn-close");
-  if (btn) {
-    btn.disabled = false;
-    btn.classList.remove("disabled");
-  }
 }
 
 function onUploadFilesSelected(input) {
@@ -1119,6 +1119,10 @@ function renderUploadFileList() {
 }
 
 async function sha256Hex(buffer) {
+  if (!crypto?.subtle) {
+    console.warn('crypto.subtle unavailable (requires HTTPS). Skipping hash.');
+    return '';
+  }
   const hash = await crypto.subtle.digest('SHA-256', buffer);
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
@@ -1127,6 +1131,12 @@ async function sha256Hex(buffer) {
 async function sha256HexFile(file) {
   const chunkSize = 4 * 1024 * 1024; // 4MB chunks
   let offset = 0;
+
+  // crypto.subtle requires a secure context (HTTPS/localhost)
+  if (!crypto?.subtle) {
+    console.warn('crypto.subtle unavailable (requires HTTPS). Skipping hash.');
+    return '';
+  }
 
   // For very large files (>500MB), return empty hash and let server verify
   if (file.size > 500 * 1024 * 1024) {
