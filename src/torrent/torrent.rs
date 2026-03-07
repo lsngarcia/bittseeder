@@ -729,7 +729,7 @@ pub fn build_v2_torrent_bencode(
             for url in webseed_urls {
                 write_bencode_string(&mut out, url.as_bytes());
             }
-            out.push(b'e');
+            out.extend_from_slice(b"e");
         }
     }
     out.push(b'e');

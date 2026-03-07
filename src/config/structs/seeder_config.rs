@@ -21,4 +21,5 @@ pub struct SeederConfig {
     pub upload_limit: Option<u64>,
     pub proxy: Option<ProxyConfig>,
     pub show_stats: bool,
+    pub private: bool,
 }

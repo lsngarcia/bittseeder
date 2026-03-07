@@ -11,7 +11,7 @@ use crate::torrent::torrent::{
     collect_dir_files,
     parse_magnet,
     parse_torrent_meta,
-    torrent_creation_date
+    torrent_creation_date,
 };
 use std::io;
 

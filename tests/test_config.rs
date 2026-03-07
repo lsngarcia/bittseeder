@@ -4,7 +4,7 @@ use bittseeder::torrent::enums::torrent_version::TorrentVersion;
 
 fn default_entry() -> TorrentEntry {
     TorrentEntry {
-        out: None,
+        create_torrent: false,
         name: Some("test".to_string()),
         file: vec!["/tmp/file.dat".to_string()],
         trackers: vec!["http://tracker.example.com/announce".to_string()],
@@ -17,6 +17,8 @@ fn default_entry() -> TorrentEntry {
         magnet: None,
         enabled: true,
         upload_limit: None,
+        allowed_extensions: None,
+        private: false,
     }
 }
 
@@ -28,6 +30,7 @@ fn default_ice() -> Vec<String> {
 fn no_file_and_no_torrent_file_is_error() {
     let mut e = default_entry();
     e.file.clear();
+    e.create_torrent = true;
     e.torrent_file = None;
     let result = e.to_seeder_config(None, 6881, SeedProtocol::Both, &default_ice(), 5000);
     assert!(result.is_err(), "should fail when no files provided");
@@ -37,6 +40,7 @@ fn no_file_and_no_torrent_file_is_error() {
 fn torrent_file_without_data_files_is_ok() {
     let mut e = default_entry();
     e.file.clear();
+    e.create_torrent = true;
     e.torrent_file = Some("/tmp/existing.torrent".to_string());
     let result = e.to_seeder_config(None, 6881, SeedProtocol::Both, &default_ice(), 5000);
     assert!(result.is_ok(), "torrent_file alone should be sufficient");

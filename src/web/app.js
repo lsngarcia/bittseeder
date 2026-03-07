@@ -424,6 +424,27 @@ function updateChart() {
   }
 }
 
+let expandedRows = new Set();
+
+function updateTableStats() {
+  torrents.forEach((t, i) => {
+    const name = t.name || (t.file && t.file[0]) || t.torrent_file || t.magnet || 'torrent-' + i;
+    const st = stats[name] || {};
+    const uploaded = st.uploaded !== undefined ? fmtBytes(st.uploaded) : '—';
+    const peers = st.peer_count !== undefined ? st.peer_count : '—';
+    const peersCell = document.getElementById(`peers-${i}`);
+    const uploadedCell = document.getElementById(`uploaded-${i}`);
+    if (peersCell) peersCell.textContent = peers;
+    if (uploadedCell) uploadedCell.textContent = uploaded;
+  });
+  const totalPeers = Object.values(stats).reduce((sum, s) => sum + (s.peer_count || 0), 0);
+  const totalRate = Object.values(stats).reduce((sum, s) => sum + (s.uploaded || 0), 0);
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    document.getElementById('status-text').textContent =
+      'Peers: ' + totalPeers + ' Upload: ' + fmtBytes(totalRate) + '/s';
+  }
+}
+
 function handleStatsMsg(msg) {
   wsData.push({ ts: msg.ts, peers: msg.peers, rate: msg.rate });
   const cutoff = msg.ts - WS_MAX_HOURS * 3600;
@@ -431,7 +452,7 @@ function handleStatsMsg(msg) {
   updateChart();
   if (msg.torrents) {
     stats = msg.torrents;
-    renderTable();
+    updateTableStats();
   }
   document.getElementById('status-text').textContent =
     'Peers: ' + msg.peers + ' Upload: ' + fmtBytes(msg.rate) + '/s';
@@ -500,11 +521,7 @@ async function loadStats() {
     const r = await apiFetch('/api/status');
     const data = await r.json();
     stats = data.torrents || {};
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      document.getElementById('status-text').textContent =
-        'Active seeders: ' + Object.keys(stats).length;
-    }
-    renderTable();
+    updateTableStats();
   } catch(_) {}
 }
 
@@ -528,15 +545,19 @@ function renderTable() {
     const proto = (t.protocol || 'both').toLowerCase();
     const protoClass = proto === 'bt' ? 'proto-bt' : proto === 'rtc' ? 'proto-rtc' : 'proto-both';
     const protoLabel = `<span class="ui tiny label ${protoClass}">${escHtml(proto)}</span>`;
-    html += `<tr style="${t.enabled ? '' : 'opacity:0.55'}">
-      <td style="width:1px;padding-right:0">
-        <button class="ui mini icon basic button" onclick="toggleDetail(${i})" title="Show details" style="padding:3px 6px">
-          <i id="expand-icon-${i}" class="chevron right icon" style="margin:0"></i>
+    const isExpanded = expandedRows.has(i);
+    const iconClass = isExpanded ? 'chevron down' : 'chevron right';
+    html += `<tr data-torrent-idx="${i}" style="${t.enabled ? '' : 'opacity:0.55'}">
+      <td style="width:1px;padding-right:0;padding-left:4px">
+        <button class="torrent-expand-btn" onclick="toggleDetail(${i})" 
+                title="${isExpanded ? 'Hide details' : 'Show details'}"
+                data-idx="${i}">
+          <i id="expand-icon-${i}" class="${iconClass} icon"></i>
         </button>
       </td>
       <td><strong>${escHtml(name)}</strong></td>
-      <td>${peers}</td>
-      <td>${uploaded}</td>
+      <td id="peers-${i}">${peers}</td>
+      <td id="uploaded-${i}">${uploaded}</td>
       <td>
         <button class="ui mini button" onclick="toggleEnabled(${i})">
           ${t.enabled ? 'Disable' : 'Enable'}
@@ -546,28 +567,52 @@ function renderTable() {
         </button>
       </td>
     </tr>
-    <tr id="detail-row-${i}" class="detail-row" style="display:none">
+    <tr id="detail-row-${i}" class="detail-row" style="display:${isExpanded ? '' : 'none'}">
       <td></td>
       <td colspan="4">
-        <div style="display:flex;flex-wrap:wrap;gap:8px 24px;padding:4px 0;font-size:0.88em">
+        <div class="torrent-detail-content">
           <span><strong>Protocol:</strong>&nbsp;${protoLabel}</span>
           <span><strong>Version:</strong>&nbsp;<span class="ui tiny label">${escHtml(version)}</span></span>
           <span><strong>Enabled:</strong>&nbsp;${enabledLabel}</span>
           <span><strong>Upload Limit:</strong>&nbsp;${limit}</span>
+          ${t.file && t.file.length ? `<span><strong>Files:</strong>&nbsp;${t.file.map(f => '<code class="detail-code">' + escHtml(f) + '</code>').join(', ')}</span>` : ''}
+          ${t.torrent_file ? `<span><strong>Torrent:</strong>&nbsp;<code class="detail-code">${escHtml(t.torrent_file)}</code></span>` : ''}
+          ${t.trackers && t.trackers.length ? `<span><strong>Trackers:</strong>&nbsp;${t.trackers.map(tr => '<code class="detail-code detail-tracker">' + escHtml(tr) + '</code>').join(', ')}</span>` : ''}
+          ${t.create_torrent ? `<span><strong>Create Torrent:</strong>&nbsp;<span class="ui tiny label">Yes</span></span>` : ''}
+          ${t.private ? `<span><strong>Private:</strong>&nbsp;<span class="ui tiny orange label">Yes</span></span>` : ''}
         </div>
       </td>
     </tr>`;
   });
   document.getElementById('torrent-tbody').innerHTML = html;
 }
-
 function toggleDetail(i) {
-  const row  = document.getElementById('detail-row-' + i);
+  const row = document.getElementById('detail-row-' + i);
   const icon = document.getElementById('expand-icon-' + i);
-  const open = row.style.display === 'none';
-  row.style.display = open ? '' : 'none';
-  icon.className = (open ? 'chevron down' : 'chevron right') + ' icon';
+  const isOpen = row.style.display !== 'none';
+  if (isOpen) {
+    row.style.display = 'none';
+    icon.className = 'chevron right icon';
+    expandedRows.delete(i);
+  } else {
+    row.style.display = '';
+    icon.className = 'chevron down icon';
+    expandedRows.add(i);
+  }
   icon.style.margin = '0';
+}
+
+function toggleCreateTorrent() {
+  const createTorrent = document.getElementById('f-create-torrent').checked;
+  const versionSelect = document.getElementById('f-version');
+  const privateContainer = document.getElementById('f-private-container');
+  if (createTorrent) {
+    versionSelect.disabled = false;
+    privateContainer.style.display = 'block';
+  } else {
+    versionSelect.disabled = true;
+    privateContainer.style.display = 'none';
+  }
 }
 
 function toggleAddForm() {
@@ -584,10 +629,10 @@ async function addTorrent() {
   const protocol = document.getElementById('f-protocol').value;
   const entry = {
     name: document.getElementById('f-name').value.trim() || null,
-    out: document.getElementById('f-out').value.trim() || null,
     file: path ? [path] : [],
     trackers,
     torrent_file: document.getElementById('f-torrent-file').value.trim() || null,
+    create_torrent: document.getElementById('f-create-torrent').checked,
     magnet: document.getElementById('f-magnet').value.trim() || null,
     enabled: document.getElementById('f-enabled').checked,
     upload_limit: parseInt(document.getElementById('f-upload-limit').value) || null,
@@ -596,6 +641,11 @@ async function addTorrent() {
     protocol: protocol !== 'both' ? protocol : null,
     ice: iceServers,
     rtc_interval: rtcInterval,
+    private: document.getElementById('f-private').checked || false,
+    allowed_extensions: (() => {
+      const ext = document.getElementById('f-allowed-extensions').value.trim();
+      return ext ? ext.split(',').map(s=>s.trim()).filter(Boolean) : null;
+    })(),
   };
   try {
     const r = await apiFetch('/api/torrents', {
@@ -603,6 +653,16 @@ async function addTorrent() {
       body: JSON.stringify(entry),
     });
     if (r.ok) {
+      const data = await r.json();
+      if (data.using_source_folder) {
+        const infoMsg = document.createElement('div');
+        infoMsg.className = 'ui info message';
+        infoMsg.style.marginTop = '12px';
+        infoMsg.innerHTML = `<i class="info circle icon"></i> Using Source Folder from Global Settings: <strong>${data.source_folder}</strong>`;
+        const form = document.getElementById('form-add');
+        form.appendChild(infoMsg);
+        setTimeout(() => infoMsg.remove(), 5000);
+      }
       toggleAddForm();
       await loadTorrents();
     } else {
@@ -612,7 +672,6 @@ async function addTorrent() {
     if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
   }
 }
-
 async function toggleEnabled(i) {
   const t = {...torrents[i], enabled: !torrents[i].enabled};
   try {

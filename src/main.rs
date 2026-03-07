@@ -332,6 +332,7 @@ async fn main() {
             upload_limit: None,
             proxy,
             show_stats: true,
+            private: false,
         };
         println!("=== Seeder (BT+RTC) ===");
         println!("Protocol: {}", match &protocol {

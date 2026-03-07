@@ -116,18 +116,10 @@
   <div class="ui segment" id="add-form" style="display:none">
     <h4 class="ui dividing header">Add New Torrent</h4>
     <form class="ui form" id="form-add">
-      <div class="four fields">
+      <div class="three fields">
         <div class="field">
           <label>Name (optional)</label>
           <input type="text" id="f-name" placeholder="My torrent">
-        </div>
-        <div class="field">
-          <label>Output .torrent file (optional)</label>
-          <input type="text" id="f-out" placeholder="/path/to/output.torrent">
-        </div>
-        <div class="field">
-          <label>Upload Limit (KB/s, blank = unlimited)</label>
-          <input type="number" id="f-upload-limit" placeholder="512" min="1">
         </div>
         <div class="field">
           <label>Protocol</label>
@@ -137,29 +129,31 @@
             <option value="rtc">rtc (WebRTC only)</option>
           </select>
         </div>
-      </div>
-      <div class="four fields">
-        <div class="field">
-          <label>Torrent Version</label>
-          <select id="f-version" class="ui dropdown">
-            <option value="v1">v1 (SHA-1, default)</option>
-            <option value="v2">v2 (SHA-256 Merkle)</option>
-            <option value="hybrid">hybrid (v1 + v2)</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>ICE Servers (overrides global, one per line)</label>
-          <textarea id="f-ice" rows="2" placeholder="stun:stun.l.google.com:19302"></textarea>
-        </div>
-        <div class="field">
-          <label>RTC Interval (ms, overrides global)</label>
-          <input type="number" id="f-rtc-interval" placeholder="5000" min="100">
-        </div>
-        <div class="field">
-          <label>&nbsp;</label>
-          <div class="ui toggle checkbox" style="margin-top:8px">
+        <div class="field" style="display:flex;align-items:flex-end;padding-bottom:8px">
+          <div class="ui toggle checkbox">
             <input type="checkbox" id="f-enabled" checked>
             <label>Enabled</label>
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Torrent Metadata File (.torrent)</label>
+        <div class="ui action input">
+          <input type="text" id="f-torrent-file" placeholder="/path/to/new_or_existing.torrent" style="flex:1">
+          <button class="ui icon button" type="button" title="Browse path on server" onclick="openBrowser('f-torrent-file','file')"><i class="folder open icon"></i></button>
+          <label class="ui icon button" title="Upload .torrent file from your computer" style="cursor:pointer;margin:0">
+            <i class="upload icon"></i>
+            <input type="file" id="f-torrent-upload" accept=".torrent" style="display:none" onchange="uploadTorrentFile()">
+          </label>
+        </div>
+        <div style="margin-top:5px;display:flex;align-items:center;gap:15px">
+          <div class="ui checkbox">
+            <input type="checkbox" id="f-create-torrent" onchange="toggleCreateTorrent()">
+            <label>Create torrent if it doesn't exist</label>
+          </div>
+          <div class="ui checkbox" id="f-private-container" style="display:none">
+            <input type="checkbox" id="f-private">
+            <label title="Private flag (BEP-27) disables DHT and PEX">Private torrent</label>
           </div>
         </div>
       </div>
@@ -167,39 +161,52 @@
         <div class="field">
           <label>Data Path (file or folder to seed)</label>
           <div class="ui action input">
-            <input type="text" id="f-path" placeholder="/path/to/file.mkv  or  /path/to/MyCollection/">
+            <input type="text" id="f-path" placeholder="/path/to/file.mkv or /path/to/MyCollection/">
             <button class="ui icon button" type="button" title="Browse" onclick="openBrowser('f-path','any')"><i class="folder open icon"></i></button>
           </div>
         </div>
         <div class="field">
           <label>Trackers (one per line, optional)</label>
-          <textarea id="f-trackers" rows="3" placeholder="http://tracker.example.com/announce"></textarea>
+          <textarea id="f-trackers" rows="2" placeholder="http://tracker.example.com/announce"></textarea>
         </div>
+      </div>
+      <div class="field">
+        <label>Magnet URI (alternative to .torrent file)</label>
+        <input type="text" id="f-magnet" placeholder="magnet:?xt=urn:btih:...">
       </div>
       <div class="two fields">
         <div class="field">
-          <label>Torrent Metadata File (.torrent) — type a path, browse, or upload</label>
-          <div class="ui action input">
-            <input type="text" id="f-torrent-file" placeholder="/path/to/existing.torrent">
-            <button class="ui icon button" type="button" title="Browse path on server" onclick="openBrowser('f-torrent-file','file')"><i class="folder open icon"></i></button>
-            <label class="ui icon button" title="Upload .torrent file from your computer" style="cursor:pointer;margin:0">
-              <i class="upload icon"></i>
-              <input type="file" id="f-torrent-upload" accept=".torrent" style="display:none" onchange="uploadTorrentFile()">
-            </label>
-          </div>
+          <label>Upload Limit (KB/s, blank = unlimited)</label>
+          <input type="number" id="f-upload-limit" placeholder="512" min="1">
         </div>
         <div class="field">
-          <label>Magnet URI</label>
-          <input type="text" id="f-magnet" placeholder="magnet:?xt=urn:btih:…">
+          <label>RTC Interval (ms, overrides global)</label>
+          <input type="number" id="f-rtc-interval" placeholder="5000" min="100">
         </div>
       </div>
-      <button class="ui green button" type="button" onclick="addTorrent()">
-        <i class="check icon"></i>Add
-      </button>
-      <button class="ui button" type="button" onclick="toggleAddForm()">Cancel</button>
+      <div class="three fields">
+        <div class="field">
+          <label>Torrent Version</label>
+          <select id="f-version" class="ui dropdown" disabled>
+            <option value="v1">v1 (SHA-1, default)</option>
+            <option value="v2">v2 (SHA-256 Merkle)</option>
+            <option value="hybrid">hybrid (v1 + v2)</option>
+          </select>
+          <small style="color:#888;display:block;margin-top:4px">For creating torrents</small>
+        </div>
+        <div class="field" style="flex:2">
+          <label>ICE Servers (overrides global, one per line)</label>
+          <textarea id="f-ice" rows="2" placeholder="stun:stun.l.google.com:19302&#10;stun:stun1.l.google.com:19302"></textarea>
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <button class="ui green button" type="button" onclick="addTorrent()">
+          <i class="check icon"></i>Add
+        </button>
+        <button class="ui button" type="button" onclick="toggleAddForm()">Cancel</button>
+      </div>
     </form>
   </div>
-
   <div class="ui modal" id="upload-modal">
     <div class="header"><i class="upload icon"></i> Upload Files to Server</div>
     <div class="content" style="padding-bottom:16px">

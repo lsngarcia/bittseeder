@@ -2,12 +2,13 @@
 ![Test](https://github.com/Power2All/bittseeder/actions/workflows/rust.yml/badge.svg)
 [<img src="https://img.shields.io/badge/DockerHub-link-blue.svg">](<https://hub.docker.com/r/power2all/bittseeder>)
 [<img src="https://img.shields.io/discord/1476196704163201059?label=Discord">](<https://discord.gg/zMyZJz4U2D>)
+[<img src="https://img.shields.io/badge/version-v0.1.1-blue.svg">](https://github.com/Power2All/bittseeder)
 
 A fast, unified Rust seeder that serves torrent data over **BitTorrent** (BT wire protocol) and **WebRTC** (RTC data channels) simultaneously — or either one on its own.
 
 BittSeeder handles both protocols from a single binary. Both share the same torrent file, piece data, tracker URL list, and upload counter. You choose the protocol globally or per-torrent via YAML or CLI.
 
----
+**✨ Recent Enhancements**: Private torrent support (BEP-27), cross-platform path normalization, persistent detail views, enhanced dark mode, and improved UI/UX. See [Recent Improvements](#recent-improvements) for details.
 
 ## Table of contents
 
@@ -38,7 +39,27 @@ BittSeeder handles both protocols from a single binary. Both share the same torr
 - [Architecture overview](#architecture-overview)
 - [License](#license)
 
----
+## Recent Improvements
+
+### v0.1.1 Series Enhancements
+
+#### UI/UX Improvements
+- **Persistent Detail Views**: Torrent detail dropdowns now stay open during real-time stats updates instead of closing every second
+- **Cross-Platform Path Normalization**: All file paths display with forward slashes (`/`) on all operating systems for consistency
+- **Enhanced Dark Mode**: Comprehensive theme support across detail rows, code blocks, expand buttons, and interactive elements
+- **Reorganized Add Torrent Form**: Improved layout with logical field grouping, optimal sizing, and better visual hierarchy
+- **Professional Button Styling**: Modern expand/collapse buttons with smooth animations and proper hover effects
+
+#### Backend Features
+- **Private Torrent Support (BEP-27)**: Create private torrents with a single toggle; the private flag disables DHT and PEX for private trackers
+- **Path Normalization Helper**: Automatic conversion of Windows backslashes to forward slashes in all API responses
+- **Smart Table Updates**: Stats now update via targeted DOM manipulation instead of full table rebuilds for better performance
+
+#### Code Quality
+- **Zero Clippy Warnings**: All code quality issues resolved
+- **Comprehensive Testing**: All test fixtures updated for new features
+- **Type Safety**: Proper handling of `Cow<str>` and `String` types throughout the codebase
+
 
 ## Requirements
 
@@ -243,10 +264,18 @@ torrents:
     rtc_interval: 3               # seconds (converted to ms internally)
     enabled: true
 
+  - name: "Movie Directory"       # Directories are automatically scanned
+    file:
+      - /data/movies/             # All files in this directory will be included
+    allowed_extensions: ["mp4", "mkv", "avi"]
+    trackers:
+      - http://tracker.example.com/announce
+    enabled: true
+
   - name: "Re-seed from .torrent"
     torrent_file: /data/existing.torrent
     file:
-      - /data/existing_content/
+      - /data/existing_content/   # Directory scanned automatically
     trackers: []                  # read from .torrent file automatically
     enabled: true
 ```
@@ -281,7 +310,8 @@ torrents:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `name` | `string` | file name | Torrent display name |
-| `file` | `[path]` | — | Files or directories to seed (required unless `torrent_file` is set) |
+| `file` | `[path]` | — | Files or directories to seed (required unless `torrent_file` is set; directories are automatically scanned) |
+| `allowed_extensions` | `[string]` | — | Only include files with these extensions when scanning directories (e.g. `["mp4", "mkv", "avi"]`) |
 | `trackers` | `[url]` | `[]` | Tracker announce URLs |
 | `torrent_file` | `path` | — | Existing `.torrent` to re-seed |
 | `magnet` | `string` | — | Magnet URI (tracker URLs extracted automatically) |
@@ -293,8 +323,59 @@ torrents:
 | `ice` | `[url]` | *(global)* | Per-torrent ICE server list |
 | `rtc_interval` | `u64` | *(global)* | Per-torrent RTC signaling interval in **seconds** |
 | `enabled` | `bool` | `true` | Set `false` to skip this torrent without removing it |
+| `private` | `bool` | `false` | **Private torrent flag** (BEP-27) — disables DHT and PEX for private trackers |
 
-> **Protocol resolution order:** per-torrent `protocol` → CLI `--protocol` → YAML `config.protocol` → `both`
+### Directory Scanning & File Validation
+
+**Automatic directory scanning:** When a directory is specified in the `file` field, BittSeeder automatically scans it recursively and includes all found files in the torrent.
+
+**Example - Seed a directory:**
+
+```yaml
+torrents:
+  - name: "Movies"
+    file:
+      - /movies/
+    allowed_extensions: ["mp4", "mkv", "avi"]
+    enabled: true
+```
+
+**Example - Mix individual files and directories:**
+
+```yaml
+torrents:
+  - name: "Media Collection"
+    file:
+      - /movies/blockbuster.mp4
+      - /tv-shows/          # Directory - automatically scanned
+      - /music/playlist.m3u
+    allowed_extensions: ["mp4", "mkv", "avi", "mp3", "flac"]
+    enabled: true
+```
+
+**Extension filtering:** Use `allowed_extensions` to only include specific file types when scanning directories:
+
+```yaml
+torrents:
+  - name: "Music Library"
+    file:
+      - /music/
+    allowed_extensions:
+      - "mp3"
+      - "flac"
+      - "wav"
+    enabled: true
+```
+
+**Automatic file validation:** Files are automatically validated at runtime when seeding starts. BittSeeder checks:
+- ✅ File exists and is readable
+- ✅ File is not empty
+- ✅ File can be opened and read
+- ✅ File data matches torrent piece hashes
+
+If validation fails, the torrent will not seed and an error is logged indicating which file and/or piece failed validation.
+
+**Source Folder fallback in web UI:** When adding torrents via the web UI, if no Data Path is specified, the system automatically uses the configured Source Folder from Global Settings → Network (the same folder used by Batch Add). This makes it easy to add multiple torrents from the same location.
 > **ICE resolution order:** per-torrent `ice` → YAML `config.rtc_ice_servers` → Google STUN x2
 
 ---
@@ -306,12 +387,18 @@ The web UI starts automatically on port `8090` (override with `--web-port` or `c
 Features:
 - Live **Peers** and **Upload Speed** charts (24 h / 48 h / 72 h window)
 - Per-torrent uploaded bytes and active peer count, updated every second via WebSocket
+- **Persistent Detail Views** — expandable torrent details that stay open during real-time stats updates (no more flickering!)
+- **Cross-Platform Path Display** — all file paths normalized to forward slashes for consistent display on Windows, Linux, and macOS
 - Add, edit, enable/disable, and delete torrents without restarting
+- **Improved Form Layout** — reorganized Add Torrent form with logical field grouping and optimal sizing
+- **Private Torrent Support** — create private torrents (BEP-27) with a single toggle; private flag disables DHT and PEX
+- **Enhanced Dark Mode** — full theme support across all UI elements including detail rows, code blocks, and interactive elements
 - **Batch Add** — scan a configured source folder and register every top-level file/folder as a new torrent entry in one click
 - **Upload `.torrent`** — upload an existing `.torrent` file directly from your browser instead of typing a server-side path
 - **Upload Files / Folders** — upload any file or entire folder from your browser directly to the server. Files are transferred in chunks with per-chunk SHA-256 validation; a full-file SHA-256 hash check is performed on finalize. Upload progress and hash-verification progress are shown live
-- Dark/light theme toggle
+- Dark/light theme toggle with comprehensive theming
 - Live **Console** log viewer (last 10 000 lines, streaming via WebSocket)
+- Fully responsive — works on desktop, tablet, and mobile
 - Fully responsive — works on desktop, tablet, and mobile
 
 ### Authentication
@@ -552,6 +639,7 @@ BittSeeder implements the following [BitTorrent Enhancement Proposals](https://w
 | [BEP 15](https://www.bittorrent.org/beps/bep_0015.html) | UDP Tracker Protocol | Full connect/announce/stopped lifecycle over UDP (`udp://` tracker URLs) |
 | [BEP 19](https://www.bittorrent.org/beps/bep_0019.html) | WebSeed (GetRight style) | `url-list` field written to generated `.torrent` files when `--webseed` / `webseed` entries are configured |
 | [BEP 23](https://www.bittorrent.org/beps/bep_0023.html) | Tracker Returns Compact Peer Lists | Always requests `compact=1`; parses 6-byte compact IPv4 peer entries (4-byte IP + 2-byte port) |
+| [BEP 27](https://www.bittorrent.org/beps/bep_0027.html) | Private Torrents | Private flag (`private:1`) in torrent info dict — disables DHT and PEX |
 | [BEP 52](https://www.bittorrent.org/beps/bep_0052.html) | The BitTorrent Protocol v2 | Full v2 torrent creation (SHA-256 piece hashing, per-file Merkle trees, `file tree` info structure); hybrid v1+v2 torrents; v2 magnet links (`xt=urn:btmh:1220…`) |
 
 ---
