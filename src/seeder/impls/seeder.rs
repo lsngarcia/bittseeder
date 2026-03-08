@@ -193,7 +193,14 @@ impl Seeder {
                     stop_rx: stop_rx.clone(),
                 };
                 let mut map = reg.write().await;
-                map.insert(self.torrent_info.info_hash, entry);
+                map.insert(self.torrent_info.info_hash, entry.clone());
+                // Also register the truncated v2 hash so peers connecting with
+                // the v2 info hash (first 20 bytes of SHA-256) are accepted.
+                if let Some(v2) = self.torrent_info.v2_info_hash {
+                    let mut truncated = [0u8; 20];
+                    truncated.copy_from_slice(&v2[..20]);
+                    map.insert(truncated, entry);
+                }
             } else {
                 let listen_addr = format!("0.0.0.0:{}", self.config.listen_port);
                 let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
@@ -362,6 +369,11 @@ impl Seeder {
             && let Some(ref reg) = registry {
                 let mut map = reg.write().await;
                 map.remove(&self.torrent_info.info_hash);
+                if let Some(v2) = self.torrent_info.v2_info_hash {
+                    let mut truncated = [0u8; 20];
+                    truncated.copy_from_slice(&v2[..20]);
+                    map.remove(&truncated);
+                }
             }
         if !bt_trackers.is_empty() {
             let uploaded = self.uploaded.load(Ordering::Relaxed);
