@@ -24,6 +24,7 @@ impl Default for SeederConfig {
             upload_limit: None,
             proxy: None,
             show_stats: true,
+            private: false,
         }
     }
 }

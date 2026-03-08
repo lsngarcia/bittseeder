@@ -136,6 +136,10 @@ async fn send_unchoke(stream: &mut TcpStream) -> std::io::Result<()> {
     stream.write_all(&msg).await
 }
 
+async fn send_keepalive(stream: &mut TcpStream) -> std::io::Result<()> {
+    stream.write_all(&[0u8; 4]).await
+}
+
 async fn send_piece_block(
     stream: &mut TcpStream,
     index: u32,
@@ -193,14 +197,29 @@ async fn handle_peer_connection(
         addr,
         peer_id_hex.get(..8).unwrap_or(&peer_id_hex)
     );
+    // Log extension bits advertised by the peer (bytes 20-27 of handshake).
+    let ext_bytes = &peer_hs[20..28];
+    log::debug!("[BT] {} ext flags: {:02x?}", addr, ext_bytes);
+
     if let Err(e) = send_bitfield(&mut stream, torrent_info.piece_count).await {
         log::debug!("[BT] Bitfield send failed to {}: {}", addr, e);
         return;
     }
+    log::debug!("[BT] → bitfield ({} pieces) to {}", torrent_info.piece_count, addr);
+
     if let Err(e) = send_unchoke(&mut stream).await {
         log::debug!("[BT] Unchoke send failed to {}: {}", addr, e);
         return;
     }
+    log::debug!("[BT] → unchoke to {}", addr);
+
+    // Send keepalive every 2 minutes to prevent the peer timing out during idle periods.
+    let keepalive_period = std::time::Duration::from_secs(120);
+    let mut keepalive = tokio::time::interval_at(
+        tokio::time::Instant::now() + keepalive_period,
+        keepalive_period,
+    );
+
     loop {
         tokio::select! {
             biased;
@@ -211,22 +230,30 @@ async fn handle_peer_connection(
                     break;
                 }
             }
+            _ = keepalive.tick() => {
+                log::debug!("[BT] → keepalive to {}", addr);
+                if let Err(e) = send_keepalive(&mut stream).await {
+                    log::debug!("[BT] Keepalive send failed to {}: {}", addr, e);
+                    break;
+                }
+            }
             msg = read_message(&mut stream) => {
                 match msg {
-                    Ok(None) => {}
+                    Ok(None) => {
+                        log::debug!("[BT] ← keepalive from {}", addr);
+                    }
                     Ok(Some((id, payload))) => {
                         match id {
                             MSG_INTERESTED => {
-                                log::debug!(
-                                    "[BT] Peer {}… interested",
-                                    peer_id_hex.get(..8).unwrap_or(&peer_id_hex)
-                                );
+                                log::debug!("[BT] ← interested from {}", addr);
+                                if let Err(e) = send_unchoke(&mut stream).await {
+                                    log::debug!("[BT] Unchoke send failed to {}: {}", addr, e);
+                                    break;
+                                }
+                                log::debug!("[BT] → unchoke to {}", addr);
                             }
                             MSG_NOT_INTERESTED => {
-                                log::debug!(
-                                    "[BT] Peer {}… not interested",
-                                    peer_id_hex.get(..8).unwrap_or(&peer_id_hex)
-                                );
+                                log::debug!("[BT] ← not-interested from {}", addr);
                             }
                             MSG_REQUEST => {
                                 if payload.len() < 12 {
@@ -237,8 +264,16 @@ async fn handle_peer_connection(
                                 let begin = u32::from_be_bytes([payload[4], payload[5], payload[6], payload[7]]);
                                 let length = u32::from_be_bytes([payload[8], payload[9], payload[10], payload[11]]);
                                 let length = length.min(MAX_BLOCK_SIZE);
-                                log::debug!("[BT] Request: piece={} begin={} len={}", index, begin, length);
-                                match read_block(&torrent_info, index as usize, begin as u64, length as usize) {
+                                log::debug!("[BT] ← request piece={} begin={} len={} from {}", index, begin, length, addr);
+                                let ti = Arc::clone(&torrent_info);
+                                let block_result = tokio::task::spawn_blocking(move || {
+                                    read_block(&ti, index as usize, begin as u64, length as usize)
+                                }).await;
+                                let block_result = match block_result {
+                                    Ok(r) => r,
+                                    Err(e) => { log::warn!("[BT] spawn_blocking panicked: {}", e); break; }
+                                };
+                                match block_result {
                                     Ok(data) => {
                                         if let Some(rl) = &rate_limiter {
                                             let n = NonZeroU32::new(data.len() as u32)
@@ -246,6 +281,7 @@ async fn handle_peer_connection(
                                             rl.until_n_ready(n).await.ok();
                                         }
                                         let bytes_sent = data.len() as u64;
+                                        log::debug!("[BT] → piece piece={} begin={} len={} to {}", index, begin, bytes_sent, addr);
                                         if let Err(e) = send_piece_block(&mut stream, index, begin, &data).await {
                                             log::debug!("[BT] Send error to {}: {}", addr, e);
                                             break;
@@ -254,14 +290,29 @@ async fn handle_peer_connection(
                                         peer_uploaded.fetch_add(bytes_sent, Ordering::Relaxed);
                                     }
                                     Err(e) => {
-                                        log::warn!("[BT] Block read error: {}", e);
+                                        log::warn!("[BT] Block read error piece={} begin={}: {}", index, begin, e);
                                         break;
                                     }
                                 }
                             }
-                            MSG_CANCEL | MSG_CHOKE | MSG_UNCHOKE | MSG_HAVE => {}
+                            MSG_CANCEL => {
+                                if payload.len() >= 12 {
+                                    let index = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                                    let begin = u32::from_be_bytes([payload[4], payload[5], payload[6], payload[7]]);
+                                    let length = u32::from_be_bytes([payload[8], payload[9], payload[10], payload[11]]);
+                                    log::debug!("[BT] ← cancel piece={} begin={} len={} from {}", index, begin, length, addr);
+                                }
+                            }
+                            MSG_CHOKE => log::debug!("[BT] ← choke from {}", addr),
+                            MSG_UNCHOKE => log::debug!("[BT] ← unchoke from {}", addr),
+                            MSG_HAVE => {
+                                if payload.len() >= 4 {
+                                    let piece = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                                    log::debug!("[BT] ← have piece={} from {}", piece, addr);
+                                }
+                            }
                             _ => {
-                                log::debug!("[BT] Unknown message id={} from {}", id, addr);
+                                log::debug!("[BT] ← unknown msg id={} len={} from {}", id, payload.len(), addr);
                             }
                         }
                     }

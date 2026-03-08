@@ -35,7 +35,7 @@ function closeMobileMenu() {
 
 document.addEventListener('click', function(e) {
   const menu = document.getElementById('header-actions');
-  const btn  = document.getElementById('hamburger-btn');
+  const btn = document.getElementById('hamburger-btn');
   if (menu.classList.contains('open') && !menu.contains(e.target) && !btn.contains(e.target)) {
     closeMobileMenu();
   }
@@ -424,6 +424,27 @@ function updateChart() {
   }
 }
 
+let expandedRows = new Set();
+
+function updateTableStats() {
+  torrents.forEach((t, i) => {
+    const name = t.name || (t.file && t.file[0]) || t.torrent_file || t.magnet || 'torrent-' + i;
+    const st = stats[name] || {};
+    const uploaded = st.uploaded !== undefined ? fmtBytes(st.uploaded) : '—';
+    const peers = st.peer_count !== undefined ? st.peer_count : '—';
+    const peersCell = document.getElementById(`peers-${i}`);
+    const uploadedCell = document.getElementById(`uploaded-${i}`);
+    if (peersCell) peersCell.textContent = peers;
+    if (uploadedCell) uploadedCell.textContent = uploaded;
+  });
+  const totalPeers = Object.values(stats).reduce((sum, s) => sum + (s.peer_count || 0), 0);
+  const totalRate = Object.values(stats).reduce((sum, s) => sum + (s.uploaded || 0), 0);
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    document.getElementById('status-text').textContent =
+      'Peers: ' + totalPeers + ' Upload: ' + fmtBytes(totalRate) + '/s';
+  }
+}
+
 function handleStatsMsg(msg) {
   wsData.push({ ts: msg.ts, peers: msg.peers, rate: msg.rate });
   const cutoff = msg.ts - WS_MAX_HOURS * 3600;
@@ -431,7 +452,7 @@ function handleStatsMsg(msg) {
   updateChart();
   if (msg.torrents) {
     stats = msg.torrents;
-    renderTable();
+    updateTableStats();
   }
   document.getElementById('status-text').textContent =
     'Peers: ' + msg.peers + ' Upload: ' + fmtBytes(msg.rate) + '/s';
@@ -500,11 +521,7 @@ async function loadStats() {
     const r = await apiFetch('/api/status');
     const data = await r.json();
     stats = data.torrents || {};
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      document.getElementById('status-text').textContent =
-        'Active seeders: ' + Object.keys(stats).length;
-    }
-    renderTable();
+    updateTableStats();
   } catch(_) {}
 }
 
@@ -528,15 +545,19 @@ function renderTable() {
     const proto = (t.protocol || 'both').toLowerCase();
     const protoClass = proto === 'bt' ? 'proto-bt' : proto === 'rtc' ? 'proto-rtc' : 'proto-both';
     const protoLabel = `<span class="ui tiny label ${protoClass}">${escHtml(proto)}</span>`;
-    html += `<tr style="${t.enabled ? '' : 'opacity:0.55'}">
-      <td style="width:1px;padding-right:0">
-        <button class="ui mini icon basic button" onclick="toggleDetail(${i})" title="Show details" style="padding:3px 6px">
-          <i id="expand-icon-${i}" class="chevron right icon" style="margin:0"></i>
+    const isExpanded = expandedRows.has(i);
+    const iconClass = isExpanded ? 'chevron down' : 'chevron right';
+    html += `<tr data-torrent-idx="${i}" style="${t.enabled ? '' : 'opacity:0.55'}">
+      <td style="width:1px;padding-right:0;padding-left:4px">
+        <button class="torrent-expand-btn" onclick="toggleDetail(${i})" 
+                title="${isExpanded ? 'Hide details' : 'Show details'}"
+                data-idx="${i}">
+          <i id="expand-icon-${i}" class="${iconClass} icon"></i>
         </button>
       </td>
       <td><strong>${escHtml(name)}</strong></td>
-      <td>${peers}</td>
-      <td>${uploaded}</td>
+      <td id="peers-${i}">${peers}</td>
+      <td id="uploaded-${i}">${uploaded}</td>
       <td>
         <button class="ui mini button" onclick="toggleEnabled(${i})">
           ${t.enabled ? 'Disable' : 'Enable'}
@@ -546,28 +567,52 @@ function renderTable() {
         </button>
       </td>
     </tr>
-    <tr id="detail-row-${i}" class="detail-row" style="display:none">
+    <tr id="detail-row-${i}" class="detail-row" style="display:${isExpanded ? '' : 'none'}">
       <td></td>
       <td colspan="4">
-        <div style="display:flex;flex-wrap:wrap;gap:8px 24px;padding:4px 0;font-size:0.88em">
+        <div class="torrent-detail-content">
           <span><strong>Protocol:</strong>&nbsp;${protoLabel}</span>
           <span><strong>Version:</strong>&nbsp;<span class="ui tiny label">${escHtml(version)}</span></span>
           <span><strong>Enabled:</strong>&nbsp;${enabledLabel}</span>
           <span><strong>Upload Limit:</strong>&nbsp;${limit}</span>
+          ${t.file && t.file.length ? `<span><strong>Files:</strong>&nbsp;${t.file.map(f => '<code class="detail-code">' + escHtml(f) + '</code>').join(', ')}</span>` : ''}
+          ${t.torrent_file ? `<span><strong>Torrent:</strong>&nbsp;<code class="detail-code">${escHtml(t.torrent_file)}</code></span>` : ''}
+          ${t.trackers && t.trackers.length ? `<span><strong>Trackers:</strong>&nbsp;${t.trackers.map(tr => '<code class="detail-code detail-tracker">' + escHtml(tr) + '</code>').join(', ')}</span>` : ''}
+          ${t.create_torrent ? `<span><strong>Create Torrent:</strong>&nbsp;<span class="ui tiny label">Yes</span></span>` : ''}
+          ${t.private ? `<span><strong>Private:</strong>&nbsp;<span class="ui tiny orange label">Yes</span></span>` : ''}
         </div>
       </td>
     </tr>`;
   });
   document.getElementById('torrent-tbody').innerHTML = html;
 }
-
 function toggleDetail(i) {
-  const row  = document.getElementById('detail-row-' + i);
+  const row = document.getElementById('detail-row-' + i);
   const icon = document.getElementById('expand-icon-' + i);
-  const open = row.style.display === 'none';
-  row.style.display = open ? '' : 'none';
-  icon.className = (open ? 'chevron down' : 'chevron right') + ' icon';
+  const isOpen = row.style.display !== 'none';
+  if (isOpen) {
+    row.style.display = 'none';
+    icon.className = 'chevron right icon';
+    expandedRows.delete(i);
+  } else {
+    row.style.display = '';
+    icon.className = 'chevron down icon';
+    expandedRows.add(i);
+  }
   icon.style.margin = '0';
+}
+
+function toggleCreateTorrent() {
+  const createTorrent = document.getElementById('f-create-torrent').checked;
+  const versionSelect = document.getElementById('f-version');
+  const privateContainer = document.getElementById('f-private-container');
+  if (createTorrent) {
+    versionSelect.disabled = false;
+    privateContainer.style.display = 'block';
+  } else {
+    versionSelect.disabled = true;
+    privateContainer.style.display = 'none';
+  }
 }
 
 function toggleAddForm() {
@@ -584,10 +629,10 @@ async function addTorrent() {
   const protocol = document.getElementById('f-protocol').value;
   const entry = {
     name: document.getElementById('f-name').value.trim() || null,
-    out: document.getElementById('f-out').value.trim() || null,
     file: path ? [path] : [],
     trackers,
     torrent_file: document.getElementById('f-torrent-file').value.trim() || null,
+    create_torrent: document.getElementById('f-create-torrent').checked,
     magnet: document.getElementById('f-magnet').value.trim() || null,
     enabled: document.getElementById('f-enabled').checked,
     upload_limit: parseInt(document.getElementById('f-upload-limit').value) || null,
@@ -596,6 +641,11 @@ async function addTorrent() {
     protocol: protocol !== 'both' ? protocol : null,
     ice: iceServers,
     rtc_interval: rtcInterval,
+    private: document.getElementById('f-private').checked || false,
+    allowed_extensions: (() => {
+      const ext = document.getElementById('f-allowed-extensions').value.trim();
+      return ext ? ext.split(',').map(s=>s.trim()).filter(Boolean) : null;
+    })(),
   };
   try {
     const r = await apiFetch('/api/torrents', {
@@ -603,6 +653,16 @@ async function addTorrent() {
       body: JSON.stringify(entry),
     });
     if (r.ok) {
+      const data = await r.json();
+      if (data.using_source_folder) {
+        const infoMsg = document.createElement('div');
+        infoMsg.className = 'ui info message';
+        infoMsg.style.marginTop = '12px';
+        infoMsg.innerHTML = `<i class="info circle icon"></i> Using Source Folder from Global Settings: <strong>${data.source_folder}</strong>`;
+        const form = document.getElementById('form-add');
+        form.appendChild(infoMsg);
+        setTimeout(() => infoMsg.remove(), 5000);
+      }
       toggleAddForm();
       await loadTorrents();
     } else {
@@ -612,7 +672,6 @@ async function addTorrent() {
     if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
   }
 }
-
 async function toggleEnabled(i) {
   const t = {...torrents[i], enabled: !torrents[i].enabled};
   try {
@@ -762,7 +821,15 @@ async function open2FASetup() {
     document.getElementById('twofa-error').style.display = 'none';
     const qrEl = document.getElementById('twofa-qr-canvas');
     qrEl.innerHTML = '';
-    new QRCode(qrEl, {text: d.otpauth_uri, width: 200, height: 200});
+    new QRCode(qrEl, {
+      text: d.otpauth_uri,
+      width: 256,
+      height: 256,
+      colorDark: "#000000",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.H,
+      margin: 2,
+    });
     $('#twofa-modal').modal('show');
   } catch(e) {
     if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
@@ -958,6 +1025,9 @@ $(document).on('click', '.browser-item', function() {
 
 let uploadFiles = [];
 let uploadCancelled = false;
+$("#upload-modal").modal({ closable: false });
+document.getElementById("u-btn-close").disabled = true;
+document.getElementById("u-btn-close").classList.add("disabled");
 let uploadIncludeFolder = true;
 const UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
 
@@ -970,12 +1040,16 @@ function effectiveRelPath(relPath) {
 function openUploadModal() {
   uploadFiles = [];
   uploadCancelled = false;
+  $("#upload-modal").modal({ closable: false });
+  document.getElementById("u-btn-close").disabled = true;
+  document.getElementById("u-btn-close").classList.add("disabled");
   uploadIncludeFolder = true;
   document.getElementById('u-include-folder').checked = true;
   document.getElementById('u-file-input').value = '';
   document.getElementById('u-folder-input').value = '';
   document.getElementById('u-file-summary').textContent = '';
   showUploadPhase('select');
+  enableModalClosing();
   renderUploadFileList();
   $('#upload-modal').modal('show');
 }
@@ -985,6 +1059,15 @@ function showUploadPhase(phase) {
   document.getElementById('u-progress-section').style.display = phase === 'upload' ? '' : 'none';
   document.getElementById('u-btn-upload').style.display = phase === 'select' ? '' : 'none';
   document.getElementById('u-btn-close').textContent = phase === 'select' ? 'Cancel' : 'Close';
+}
+
+function enableModalClosing() {
+  $("#upload-modal").modal({ closable: true });
+  const btn = document.getElementById("u-btn-close");
+  if (btn) {
+    btn.disabled = false;
+    btn.classList.remove("disabled");
+  }
 }
 
 function onUploadFilesSelected(input) {
@@ -1026,17 +1109,120 @@ function renderUploadFileList() {
   summary.textContent = `${uploadFiles.length} file${uploadFiles.length !== 1 ? 's' : ''} — ${fmtBytes(totalBytes)} total`;
 }
 
+function sha256Pure(data) {
+  const K = [
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+  ];
+  let h = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const r = (n, b) => (n >>> b) | (n << (32 - b));
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const len = bytes.length;
+  const bitLen = len * 8;
+  const padLen = ((len % 64) < 56 ? 56 : 120) - (len % 64);
+  const padded = new Uint8Array(len + padLen + 8);
+  padded.set(bytes);
+  padded[len] = 0x80;
+  const dv = new DataView(padded.buffer);
+  dv.setUint32(padded.length - 4, bitLen >>> 0, false);
+  dv.setUint32(padded.length - 8, Math.floor(bitLen / 0x100000000), false);
+  for (let i = 0; i < padded.length; i += 64) {
+    const w = new Array(64);
+    for (let j = 0; j < 16; j++) w[j] = dv.getUint32(i + j * 4, false);
+    for (let j = 16; j < 64; j++) {
+      const s0 = r(w[j-15],7) ^ r(w[j-15],18) ^ (w[j-15] >>> 3);
+      const s1 = r(w[j-2],17) ^ r(w[j-2],19) ^ (w[j-2] >>> 10);
+      w[j] = (w[j-16] + s0 + w[j-7] + s1) >>> 0;
+    }
+    let [a,b,c,d,e,f,g,hh] = h;
+    for (let j = 0; j < 64; j++) {
+      const S1 = r(e,6) ^ r(e,11) ^ r(e,25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (hh + S1 + ch + K[j] + w[j]) >>> 0;
+      const S0 = r(a,2) ^ r(a,13) ^ r(a,22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      hh=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;
+    }
+    h = h.map((v, i) => (v + [a,b,c,d,e,f,g,hh][i]) >>> 0);
+  }
+  return h.map(v => v.toString(16).padStart(8,'0')).join('');
+}
+
 async function sha256Hex(buffer) {
-  const hash = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+  if (crypto?.subtle) {
+    const hash = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  return sha256Pure(buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer);
+}
+
+async function sha256HexFile(file) {
+  const chunkSize = 4 * 1024 * 1024;
+  let offset = 0;
+  if (file.size > 500 * 1024 * 1024) {
+    console.log('File too large for client-side hashing, server will verify');
+    return '';
+  }
+  try {
+    const chunks = [];
+    while (offset < file.size) {
+      const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
+      const chunkBuf = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Failed to read file chunk'));
+        reader.readAsArrayBuffer(chunk);
+      });
+      chunks.push(new Uint8Array(chunkBuf));
+      offset += chunkSize;
+    }
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const combined = new Uint8Array(totalLength);
+    let position = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, position);
+      position += chunk.length;
+    }
+    return crypto?.subtle
+      ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', combined.buffer))).map(b => b.toString(16).padStart(2,'0')).join('')
+      : sha256Pure(combined);
+  } catch (e) {
+    console.error('Error reading file for hashing:', e);
+    return '';
+  }
 }
 
 async function startUpload() {
-  const destBase = document.getElementById('u-dest-folder').value.trim();
-  if (!destBase) { alert('Please select a destination folder on the server.'); return; }
-  if (uploadFiles.length === 0) { alert('No files selected.'); return; }
-  uploadCancelled = false;
-  showUploadPhase('upload');
+  console.log('[Upload] Starting upload process...');
+  try {
+    const destBase = document.getElementById('u-dest-folder').value.trim();
+    console.log('[Upload] Destination folder:', destBase);
+    if (!destBase) {
+      alert('Please select a destination folder on the server.');
+      return;
+    }
+    if (uploadFiles.length === 0) {
+      alert('No files selected.');
+      return;
+    }
+    console.log('[Upload] Files to upload:', uploadFiles.length);
+    console.log('[Upload] File details:', uploadFiles.map(f => ({
+      name: f.relPath,
+      size: f.file.size,
+      type: f.file.type
+    })));
+    uploadCancelled = false;
+    $("#upload-modal").modal({ closable: false });
+    document.getElementById("u-btn-close").disabled = true;
+    document.getElementById("u-btn-close").classList.add("disabled");
+    showUploadPhase('upload');
   let html = '';
   for (let i = 0; i < uploadFiles.length; i++) {
     html += `<div style="margin-bottom:12px">
@@ -1094,6 +1280,7 @@ async function startUpload() {
     document.getElementById('u-overall-label').textContent = `${done} / ${uploadFiles.length} files done`;
     const overallBar = document.getElementById('u-overall-bar');
     overallBar.style.width = ((done / uploadFiles.length) * 100) + '%';
+    enableModalClosing();
     if (done === uploadFiles.length && !uploadCancelled) {
       overallBar.style.background = '#21ba45';
     }
@@ -1101,12 +1288,28 @@ async function startUpload() {
   if (uploadCancelled) {
     document.getElementById('u-overall-label').textContent = 'Upload stopped.';
   }
+  } catch (e) {
+    console.error('[Upload] Fatal error in startUpload:', e);
+    alert('Upload failed: ' + e.message);
+    showUploadPhase('select');
+    enableModalClosing();
+  }
 }
-
 async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgress) {
   const dest = destBase.replace(/\/+$/, '') + '/' + relPath;
   const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_SIZE));
-  const fileSha256 = await sha256Hex(await file.arrayBuffer());
+
+  console.log(`Starting upload: ${relPath} (${file.size} bytes, ${totalChunks} chunks)`);
+
+  let fileSha256;
+  try {
+    fileSha256 = await sha256HexFile(file);
+    console.log(`File hash: ${fileSha256 || '(skipped for large file)'}`);
+  } catch (e) {
+    console.error('Failed to calculate file hash:', e);
+    fileSha256 = '';
+  }
+
   const initR = await apiFetch('/api/file-upload/init', {
     method: 'POST',
     body: JSON.stringify({ dest, size: file.size, chunks: totalChunks, chunk_size: UPLOAD_CHUNK_SIZE, file_sha256: fileSha256 }),
@@ -1120,7 +1323,13 @@ async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgr
         throw new Error('Cancelled');
       }
       const start = i * UPLOAD_CHUNK_SIZE;
-      const chunkBuf = await file.slice(start, Math.min(start + UPLOAD_CHUNK_SIZE, file.size)).arrayBuffer();
+      const chunk = file.slice(start, Math.min(start + UPLOAD_CHUNK_SIZE, file.size));
+      const chunkBuf = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Failed to read file chunk'));
+        reader.readAsArrayBuffer(chunk);
+      });
       const sha256 = await sha256Hex(chunkBuf);
       let lastErr = null;
       for (let attempt = 0; attempt < 3; attempt++) {

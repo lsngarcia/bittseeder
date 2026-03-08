@@ -17,6 +17,7 @@ pub struct TorrentInfo {
     pub info_hash: InfoHash,
     pub torrent_bytes: Vec<u8>,
     pub magnet_uri: String,
+    pub v2_magnet_uri: Option<String>,
     #[allow(dead_code)]
     pub version: TorrentVersion,
     pub v2_info_hash: Option<V2InfoHash>,

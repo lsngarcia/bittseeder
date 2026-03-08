@@ -93,6 +93,7 @@ fn read_bint(data: &[u8], pos: usize) -> Result<(i64, usize), String> {
 
 pub struct ParsedTorrentMeta {
     pub info_hash: [u8; 20],
+    pub v2_info_hash: Option<[u8; 32]>,
     pub tracker_urls: Vec<String>,
     pub name: String,
     pub piece_length: u64,
@@ -173,6 +174,7 @@ pub fn parse_torrent_meta(data: &[u8]) -> Result<ParsedTorrentMeta, String> {
     let mut pieces: Vec<u8> = Vec::new();
     let mut single_length: Option<u64> = None;
     let mut multi_files: Vec<(u64, Vec<String>)> = Vec::new();
+    let mut has_file_tree = false;
     let mut ipos = 1usize;
     while ipos < info_bytes.len() && info_bytes[ipos] != b'e' {
         let (key, after_key) = read_bstring(info_bytes, ipos)?;
@@ -197,6 +199,10 @@ pub fn parse_torrent_meta(data: &[u8]) -> Result<ParsedTorrentMeta, String> {
                 let (val, after) = read_bint(info_bytes, ipos)?;
                 ipos = after;
                 single_length = Some(val as u64);
+            }
+            b"file tree" => {
+                has_file_tree = true;
+                ipos = bencode_end(info_bytes, ipos)?;
             }
             b"files" => {
                 if ipos >= info_bytes.len() || info_bytes[ipos] != b'l' {
@@ -272,7 +278,14 @@ pub fn parse_torrent_meta(data: &[u8]) -> Result<ParsedTorrentMeta, String> {
             len,
         )
     };
-    Ok(ParsedTorrentMeta { info_hash, tracker_urls, name, piece_length, pieces, files, total_size })
+    let v2_info_hash = if has_file_tree {
+        let mut h = Sha256::new();
+        h.update(info_bytes);
+        Some(h.finalize().into())
+    } else {
+        None
+    };
+    Ok(ParsedTorrentMeta { info_hash, v2_info_hash, tracker_urls, name, piece_length, pieces, files, total_size })
 }
 
 pub fn parse_magnet(uri: &str) -> (Vec<String>, Option<[u8; 20]>, Option<String>) {
@@ -729,7 +742,7 @@ pub fn build_v2_torrent_bencode(
             for url in webseed_urls {
                 write_bencode_string(&mut out, url.as_bytes());
             }
-            out.push(b'e');
+            out.extend_from_slice(b"e");
         }
     }
     out.push(b'e');
@@ -789,6 +802,7 @@ pub fn build_v1(
         info_hash,
         torrent_bytes,
         magnet_uri,
+        v2_magnet_uri: None,
         version: TorrentVersion::V1,
         v2_info_hash: None,
         tracker_urls: tracker_urls.to_vec(),
@@ -838,6 +852,7 @@ pub fn build_v2(
         info_hash,
         torrent_bytes,
         magnet_uri,
+        v2_magnet_uri: None,
         version: TorrentVersion::V2,
         v2_info_hash: Some(v2_hash),
         tracker_urls: tracker_urls.to_vec(),
@@ -883,7 +898,8 @@ pub fn build_hybrid(
         build_v2_torrent_bencode(&info_bytes, tracker_urls, creation_date, webseed_urls, &piece_layers_bytes);
     let v1_hex = hex::encode(info_hash);
     let v2_hex = hex::encode(v2_hash);
-    let magnet_uri = build_hybrid_magnet_uri(&v1_hex, &v2_hex, &name, tracker_urls);
+    let magnet_uri = build_magnet_uri(&v1_hex, &name, tracker_urls);
+    let v2_magnet_uri = Some(build_v2_magnet_uri(&v2_hex, &name, tracker_urls));
     Ok(TorrentInfo {
         name,
         piece_length,
@@ -894,6 +910,7 @@ pub fn build_hybrid(
         info_hash,
         torrent_bytes,
         magnet_uri,
+        v2_magnet_uri,
         version: TorrentVersion::Hybrid,
         v2_info_hash: Some(v2_hash),
         tracker_urls: tracker_urls.to_vec(),

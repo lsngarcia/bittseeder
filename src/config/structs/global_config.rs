@@ -28,4 +28,7 @@ pub struct GlobalConfig {
     pub letsencrypt_http_port: Option<u16>,
     pub web_login_rate_limit: Option<u32>,
     pub totp_secret: Option<String>,
+    pub validate_files: Option<bool>,
+    pub skip_invalid_files: Option<bool>,
+    pub allowed_extensions: Option<Vec<String>>,
 }

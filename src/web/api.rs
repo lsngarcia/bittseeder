@@ -34,12 +34,19 @@ use std::collections::{
 };
 use std::io;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{
+    AtomicU64,
+    Ordering
+};
 use std::time::{
     Duration,
     Instant
 };
 use tokio::sync::broadcast;
+
+fn normalize_path(path: String) -> String {
+    path.replace(r#"\"#, r#"/"#)
+}
 
 const SESSION_TTL: Duration = Duration::from_secs(3600);
 
@@ -274,8 +281,8 @@ pub async fn browse(req: HttpRequest, query: Query<BrowseQuery>, data: Data<AppS
         let size = if is_dir { 0 } else { meta.len() };
         entries.push(json!({ "name": name, "is_dir": is_dir, "size": size }));
     }
-    let parent = dir.parent().map(|p| p.to_string_lossy().into_owned());
-    let current = dir.to_string_lossy().into_owned();
+    let parent = dir.parent().map(|p| normalize_path(p.to_string_lossy().into_owned()));
+    let current = normalize_path(dir.to_string_lossy().into_owned());
     HttpResponse::Ok().json(json!({
         "path": current,
         "parent": parent,
@@ -472,13 +479,31 @@ pub async fn add_torrent(req: HttpRequest, data: Data<AppState>, body: Json<Torr
     if !is_authenticated(&req, &data).await {
         return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
     }
+    let mut entry = body.into_inner();
+    let file_ref = data.shared_file.read().await;
+    let using_source_folder = if entry.file.is_empty() || entry.file.iter().all(|f| f.trim().is_empty()) {
+        if let Some(ref source_folder) = file_ref.config.source_folder {
+            entry.file = vec![normalize_path(source_folder.to_string_lossy().to_string())];
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    drop(file_ref);
     let mut file = data.shared_file.write().await;
-    file.torrents.push(body.into_inner());
+    file.torrents.push(entry);
     if let Err(e) = write_yaml(&data.yaml_path, &file) {
         return HttpResponse::InternalServerError().body(e.to_string());
     }
     let _ = data.reload_tx.send(());
-    HttpResponse::Ok().json(json!({"ok": true}))
+    let mut response = json!({"ok": true});
+    if using_source_folder {
+        response["using_source_folder"] = json!(true);
+        response["source_folder"] = json!(normalize_path(file.config.source_folder.as_ref().unwrap().display().to_string()));
+    }
+    HttpResponse::Ok().json(response)
 }
 
 pub async fn update_torrent(
@@ -633,7 +658,7 @@ pub async fn upload_torrent(
     }
     log::info!("[Web] Uploaded torrent: {}", dest.display());
     HttpResponse::Ok().json(json!({
-        "path": dest.to_string_lossy(),
+        "path": normalize_path(dest.to_string_lossy().into_owned()),
         "name": filename,
     }))
 }
@@ -695,7 +720,7 @@ pub async fn batch_add(req: HttpRequest, data: Data<AppState>) -> HttpResponse {
             continue;
         }
         let path = dir_entry.path();
-        let path_str = path.to_string_lossy().into_owned();
+        let path_str = normalize_path(path.to_string_lossy().into_owned());
         if existing_paths.contains(&path_str) {
             skipped += 1;
             continue;
@@ -709,7 +734,6 @@ pub async fn batch_add(req: HttpRequest, data: Data<AppState>) -> HttpResponse {
                 .to_string()
         };
         file.torrents.push(TorrentEntry {
-            out: None,
             name: Some(torrent_name),
             file: vec![path_str],
             trackers: vec![],
@@ -722,6 +746,9 @@ pub async fn batch_add(req: HttpRequest, data: Data<AppState>) -> HttpResponse {
             magnet: None,
             enabled: true,
             upload_limit: None,
+            allowed_extensions: None,
+            create_torrent: false,
+            private: false,
         });
         added += 1;
     }
@@ -931,7 +958,7 @@ pub async fn file_upload_finalize(
             hash_progress.fetch_add(n as u64, Ordering::Relaxed);
         }
         let computed = hex::encode(hasher.finalize());
-        if computed != file_sha256 {
+        if !file_sha256.is_empty() && computed != file_sha256 {
             let _ = std::fs::remove_file(&part_path);
             return Err(io::Error::other(format!(
                 "Integrity check failed: expected SHA-256 {file_sha256}, computed {computed}"

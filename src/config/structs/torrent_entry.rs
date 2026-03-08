@@ -10,7 +10,6 @@ fn default_true() -> bool {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TorrentEntry {
-    pub out: Option<String>,
     pub name: Option<String>,
     #[serde(default)]
     pub file: Vec<String>,
@@ -23,8 +22,13 @@ pub struct TorrentEntry {
     pub protocol: Option<SeedProtocol>,
     pub version: Option<String>,
     pub torrent_file: Option<String>,
+    pub create_torrent: bool,
     pub magnet: Option<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
     pub upload_limit: Option<u64>,
+    #[serde(default)]
+    pub allowed_extensions: Option<Vec<String>>,
+    #[serde(default)]
+    pub private: bool,
 }
