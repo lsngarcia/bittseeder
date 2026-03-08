@@ -373,7 +373,9 @@ torrents:
 - ✅ File can be opened and read
 - ✅ File data matches torrent piece hashes
 
-If validation fails, the torrent will not seed and an error is logged indicating which file and/or piece failed validation.
+If a file or directory listed in `file` does not exist at startup, the entire torrent entry is **skipped gracefully** with a warning logged — BittSeeder continues running and serves all other torrents normally. Fix the path or restore the file, then hot-reload the config to activate the entry.
+
+If validation fails at serve time (e.g. corrupt data), the torrent will not seed and an error is logged indicating which file and/or piece failed validation.
 
 **Source Folder fallback in web UI:** When adding torrents via the web UI, if no Data Path is specified, the system automatically uses the configured Source Folder from Global Settings → Network (the same folder used by Batch Add). This makes it easy to add multiple torrents from the same location.
 > **ICE resolution order:** per-torrent `ice` → YAML `config.rtc_ice_servers` → Google STUN x2
@@ -640,7 +642,7 @@ BittSeeder implements the following [BitTorrent Enhancement Proposals](https://w
 | [BEP 19](https://www.bittorrent.org/beps/bep_0019.html) | WebSeed (GetRight style) | `url-list` field written to generated `.torrent` files when `--webseed` / `webseed` entries are configured |
 | [BEP 23](https://www.bittorrent.org/beps/bep_0023.html) | Tracker Returns Compact Peer Lists | Always requests `compact=1`; parses 6-byte compact IPv4 peer entries (4-byte IP + 2-byte port) |
 | [BEP 27](https://www.bittorrent.org/beps/bep_0027.html) | Private Torrents | Private flag (`private:1`) in torrent info dict — disables DHT and PEX |
-| [BEP 52](https://www.bittorrent.org/beps/bep_0052.html) | The BitTorrent Protocol v2 | Full v2 torrent creation (SHA-256 piece hashing, per-file Merkle trees, `file tree` info structure); hybrid v1+v2 torrents; v2 magnet links (`xt=urn:btmh:1220…`) |
+| [BEP 52](https://www.bittorrent.org/beps/bep_0052.html) | The BitTorrent Protocol v2 | Full v2 torrent creation (SHA-256 piece hashing, per-file Merkle trees, `file tree` info structure); hybrid v1+v2 torrents; v2 magnet links (`xt=urn:btmh:1220…`). For hybrid torrents both the v1 SHA-1 hash and the truncated v2 hash (first 20 bytes of SHA-256, per BEP 52 §Handshake) are registered — peers connecting via either the v1 or the v2 magnet URI are accepted simultaneously. |
 
 ---
 

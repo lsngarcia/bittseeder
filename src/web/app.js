@@ -35,7 +35,7 @@ function closeMobileMenu() {
 
 document.addEventListener('click', function(e) {
   const menu = document.getElementById('header-actions');
-  const btn  = document.getElementById('hamburger-btn');
+  const btn = document.getElementById('hamburger-btn');
   if (menu.classList.contains('open') && !menu.contains(e.target) && !btn.contains(e.target)) {
     closeMobileMenu();
   }
@@ -819,22 +819,17 @@ async function open2FASetup() {
     document.getElementById('twofa-secret-text').textContent = d.secret;
     document.getElementById('twofa-confirm-code').value = '';
     document.getElementById('twofa-error').style.display = 'none';
-    
-    // Generate QR code with proper settings for scannability
     const qrEl = document.getElementById('twofa-qr-canvas');
     qrEl.innerHTML = '';
-    
-    // Use qrcodejs2 with optimal settings for scanning
     new QRCode(qrEl, {
       text: d.otpauth_uri,
       width: 256,
       height: 256,
       colorDark: "#000000",
       colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.H,  // High error correction for better scannability
-      margin: 2,  // Proper quiet zone
+      correctLevel: QRCode.CorrectLevel.H,
+      margin: 2,
     });
-    
     $('#twofa-modal').modal('show');
   } catch(e) {
     if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
@@ -1030,11 +1025,9 @@ $(document).on('click', '.browser-item', function() {
 
 let uploadFiles = [];
 let uploadCancelled = false;
-
-    // Prevent modal from closing during upload
-    $("#upload-modal").modal({ closable: false });
-    document.getElementById("u-btn-close").disabled = true;
-    document.getElementById("u-btn-close").classList.add("disabled");
+$("#upload-modal").modal({ closable: false });
+document.getElementById("u-btn-close").disabled = true;
+document.getElementById("u-btn-close").classList.add("disabled");
 let uploadIncludeFolder = true;
 const UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
 
@@ -1047,18 +1040,16 @@ function effectiveRelPath(relPath) {
 function openUploadModal() {
   uploadFiles = [];
   uploadCancelled = false;
-
-    // Prevent modal from closing during upload
-    $("#upload-modal").modal({ closable: false });
-    document.getElementById("u-btn-close").disabled = true;
-    document.getElementById("u-btn-close").classList.add("disabled");
+  $("#upload-modal").modal({ closable: false });
+  document.getElementById("u-btn-close").disabled = true;
+  document.getElementById("u-btn-close").classList.add("disabled");
   uploadIncludeFolder = true;
   document.getElementById('u-include-folder').checked = true;
   document.getElementById('u-file-input').value = '';
   document.getElementById('u-folder-input').value = '';
   document.getElementById('u-file-summary').textContent = '';
   showUploadPhase('select');
-    enableModalClosing();
+  enableModalClosing();
   renderUploadFileList();
   $('#upload-modal').modal('show');
 }
@@ -1118,7 +1109,6 @@ function renderUploadFileList() {
   summary.textContent = `${uploadFiles.length} file${uploadFiles.length !== 1 ? 's' : ''} — ${fmtBytes(totalBytes)} total`;
 }
 
-// Pure-JS SHA-256 — no crypto.subtle / HTTPS required
 function sha256Pure(data) {
   const K = [
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
@@ -1147,7 +1137,7 @@ function sha256Pure(data) {
     for (let j = 0; j < 16; j++) w[j] = dv.getUint32(i + j * 4, false);
     for (let j = 16; j < 64; j++) {
       const s0 = r(w[j-15],7) ^ r(w[j-15],18) ^ (w[j-15] >>> 3);
-      const s1 = r(w[j-2],17) ^ r(w[j-2],19)  ^ (w[j-2] >>> 10);
+      const s1 = r(w[j-2],17) ^ r(w[j-2],19) ^ (w[j-2] >>> 10);
       w[j] = (w[j-16] + s0 + w[j-7] + s1) >>> 0;
     }
     let [a,b,c,d,e,f,g,hh] = h;
@@ -1173,36 +1163,26 @@ async function sha256Hex(buffer) {
   return sha256Pure(buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer);
 }
 
-// Calculate SHA-256 of a file by reading in chunks to avoid memory issues
 async function sha256HexFile(file) {
-  const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+  const chunkSize = 4 * 1024 * 1024;
   let offset = 0;
-
-  // For very large files (>500MB), return empty hash and let server verify
   if (file.size > 500 * 1024 * 1024) {
     console.log('File too large for client-side hashing, server will verify');
     return '';
   }
-
   try {
-    // Read file in chunks and accumulate
     const chunks = [];
     while (offset < file.size) {
       const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
-
-      // Use FileReader to read the chunk (more reliable than arrayBuffer)
       const chunkBuf = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = () => reject(new Error('Failed to read file chunk'));
         reader.readAsArrayBuffer(chunk);
       });
-
       chunks.push(new Uint8Array(chunkBuf));
       offset += chunkSize;
     }
-
-    // Combine all chunks
     const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
     const combined = new Uint8Array(totalLength);
     let position = 0;
@@ -1210,45 +1190,35 @@ async function sha256HexFile(file) {
       combined.set(chunk, position);
       position += chunk.length;
     }
-
-    // Hash the combined data
     return crypto?.subtle
       ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', combined.buffer))).map(b => b.toString(16).padStart(2,'0')).join('')
       : sha256Pure(combined);
   } catch (e) {
     console.error('Error reading file for hashing:', e);
-    // If we can't read the file, return empty hash and let server verify
     return '';
   }
 }
 
 async function startUpload() {
   console.log('[Upload] Starting upload process...');
-
   try {
     const destBase = document.getElementById('u-dest-folder').value.trim();
     console.log('[Upload] Destination folder:', destBase);
-
     if (!destBase) {
       alert('Please select a destination folder on the server.');
       return;
     }
-
     if (uploadFiles.length === 0) {
       alert('No files selected.');
       return;
     }
-
     console.log('[Upload] Files to upload:', uploadFiles.length);
     console.log('[Upload] File details:', uploadFiles.map(f => ({
       name: f.relPath,
       size: f.file.size,
       type: f.file.type
     })));
-
     uploadCancelled = false;
-
-    // Prevent modal from closing during upload
     $("#upload-modal").modal({ closable: false });
     document.getElementById("u-btn-close").disabled = true;
     document.getElementById("u-btn-close").classList.add("disabled");
@@ -1324,7 +1294,6 @@ async function startUpload() {
     showUploadPhase('select');
     enableModalClosing();
   }
-
 }
 async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgress) {
   const dest = destBase.replace(/\/+$/, '') + '/' + relPath;
@@ -1355,15 +1324,12 @@ async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgr
       }
       const start = i * UPLOAD_CHUNK_SIZE;
       const chunk = file.slice(start, Math.min(start + UPLOAD_CHUNK_SIZE, file.size));
-
-      // Use FileReader to read the chunk (more reliable than arrayBuffer for large files)
       const chunkBuf = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = () => reject(new Error('Failed to read file chunk'));
         reader.readAsArrayBuffer(chunk);
       });
-
       const sha256 = await sha256Hex(chunkBuf);
       let lastErr = null;
       for (let attempt = 0; attempt < 3; attempt++) {
