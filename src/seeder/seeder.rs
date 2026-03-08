@@ -265,7 +265,15 @@ async fn handle_peer_connection(
                                 let length = u32::from_be_bytes([payload[8], payload[9], payload[10], payload[11]]);
                                 let length = length.min(MAX_BLOCK_SIZE);
                                 log::debug!("[BT] ← request piece={} begin={} len={} from {}", index, begin, length, addr);
-                                match read_block(&torrent_info, index as usize, begin as u64, length as usize) {
+                                let ti = Arc::clone(&torrent_info);
+                                let block_result = tokio::task::spawn_blocking(move || {
+                                    read_block(&ti, index as usize, begin as u64, length as usize)
+                                }).await;
+                                let block_result = match block_result {
+                                    Ok(r) => r,
+                                    Err(e) => { log::warn!("[BT] spawn_blocking panicked: {}", e); break; }
+                                };
+                                match block_result {
                                     Ok(data) => {
                                         if let Some(rl) = &rate_limiter {
                                             let n = NonZeroU32::new(data.len() as u32)
