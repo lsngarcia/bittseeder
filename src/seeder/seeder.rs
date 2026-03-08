@@ -221,6 +221,10 @@ async fn handle_peer_connection(
                                     "[BT] Peer {}… interested",
                                     peer_id_hex.get(..8).unwrap_or(&peer_id_hex)
                                 );
+                                if let Err(e) = send_unchoke(&mut stream).await {
+                                    log::debug!("[BT] Unchoke send failed to {}: {}", addr, e);
+                                    break;
+                                }
                             }
                             MSG_NOT_INTERESTED => {
                                 log::debug!(
