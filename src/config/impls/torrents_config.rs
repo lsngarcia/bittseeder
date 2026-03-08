@@ -30,7 +30,10 @@ impl TorrentEntry {
             let mut filtered_files = Vec::new();
             for file_path in &self.file {
                 let path = PathBuf::from(file_path);
-                if path.is_dir() && path.exists() {
+                if path.is_dir() {
+                    if !path.exists() {
+                        return Err(format!("Directory not found: {}", path.display()));
+                    }
                     let mut dir_files: Vec<(PathBuf, Vec<String>)> = Vec::new();
                     match collect_dir_files(&path, &path, &mut dir_files) {
                         Ok(_) => {
@@ -52,6 +55,9 @@ impl TorrentEntry {
                         }
                     }
                 } else {
+                    if !path.exists() {
+                        return Err(format!("File not found: {}", path.display()));
+                    }
                     if let Some(allowed) = &self.allowed_extensions
                         && let Some(ext) = path.extension().and_then(|e| e.to_str())
                     {
@@ -77,7 +83,10 @@ impl TorrentEntry {
             let mut all_files = Vec::new();
             for file_path in &self.file {
                 let path = PathBuf::from(file_path);
-                if path.is_dir() && path.exists() {
+                if path.is_dir() {
+                    if !path.exists() {
+                        return Err(format!("Directory not found: {}", path.display()));
+                    }
                     let mut dir_files: Vec<(PathBuf, Vec<String>)> = Vec::new();
                     match collect_dir_files(&path, &path, &mut dir_files) {
                         Ok(_) => {
@@ -90,6 +99,9 @@ impl TorrentEntry {
                         }
                     }
                 } else {
+                    if !path.exists() {
+                        return Err(format!("File not found: {}", path.display()));
+                    }
                     all_files.push(path);
                 }
             }

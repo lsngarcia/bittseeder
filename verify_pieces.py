@@ -76,11 +76,7 @@ def verify(torrent_path, file_path, check_pieces=None):
         return
 
     if check_pieces is None:
-        check_pieces = list(range(min(5, num_pieces)))
-        check_pieces += [num_pieces - 2, num_pieces - 1]
-        for p in [1046, 1705, 2609, 3458]:
-            if p < num_pieces:
-                check_pieces.append(p)
+        check_pieces = list(range(num_pieces))
 
     check_pieces = sorted(set(check_pieces))
     print(f"\nVerifying {len(check_pieces)} pieces...")
@@ -93,12 +89,11 @@ def verify(torrent_path, file_path, check_pieces=None):
             data = f.read(length)
             computed = hashlib.sha1(data).digest()
             expected = pieces_raw[pi*20:(pi+1)*20]
-            ok = computed == expected
-            status = "OK  " if ok else "FAIL"
-            if not ok:
+            if computed != expected:
                 bad += 1
-            print(f"  piece={pi:5d} offset={offset:12d} len={length:8d}  {status}"
-                  + (f"  expected={expected.hex()} got={computed.hex()}" if not ok else ""))
+                print(f"  piece={pi:5d} offset={offset:12d} len={length:8d}  FAIL  expected={expected.hex()} got={computed.hex()}")
+            elif len(check_pieces) <= 20:
+                print(f"  piece={pi:5d} offset={offset:12d} len={length:8d}  OK")
 
     print(f"\nResult: {len(check_pieces)-bad}/{len(check_pieces)} pieces OK")
     if bad:
