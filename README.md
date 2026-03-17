@@ -1,4 +1,4 @@
 ### Olá 👋
 
-- 🌱 I’m currently learning HTML, CSS, JS, SQLite
+- 🌱 I’m currently learning HTML, CSS, JS
 - 📫 How to reach me: @lucas.sngarcia
